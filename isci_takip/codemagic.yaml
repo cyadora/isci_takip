@@ -1,0 +1,57 @@
+workflows:
+  ios-workflow:
+    name: iOS Build
+    instance_type: mac_mini_m1
+    max_build_duration: 60
+    environment:
+      ios_signing:
+        distribution_type: development
+        bundle_identifier: com.example.isciTakip
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Set up code signing settings
+        script: |
+          echo "Setting up code signing"
+          # Bu kısım gerçek sertifikalarla yapılandırılmalıdır
+          
+      - name: Flutter packages get
+        script: |
+          flutter packages pub get
+          
+      - name: Pod install
+        script: |
+          cd ios
+          pod install
+          
+      - name: Fix iOS build issues
+        script: |
+          # iOS için özel düzeltmeler
+          echo "EXCLUDED_ARCHS[sdk=iphonesimulator*] = arm64" >> ios/Flutter/AppConfig.xcconfig
+          echo "OTHER_CFLAGS = \$(inherited)" >> ios/Flutter/AppConfig.xcconfig
+          
+      - name: Flutter build iOS
+        script: |
+          flutter build ios --release --no-codesign
+          
+    artifacts:
+      - build/ios/iphoneos/Runner.app
+      
+  android-workflow:
+    name: Android Build
+    instance_type: mac_mini_m1
+    max_build_duration: 60
+    environment:
+      flutter: stable
+    scripts:
+      - name: Flutter packages get
+        script: |
+          flutter packages pub get
+          
+      - name: Flutter build APK
+        script: |
+          flutter build apk --release
+          
+    artifacts:
+      - build/app/outputs/flutter-apk/app-release.apk

@@ -1,5 +1,5 @@
 # Uncomment this line to define a global platform for your project
-platform :ios, '12.0'
+platform :ios, '13.0'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
@@ -17,7 +17,7 @@ def flutter_root
   end
 
   File.foreach(generated_xcode_build_settings_path) do |line|
-    matches = line.match(/FLUTTER_ROOT\=(.*)/)
+    matches = line.match(/FLUTTER_ROOT\=(.*)/) 
     return matches[1].strip if matches
   end
   raise "FLUTTER_ROOT not found in #{generated_xcode_build_settings_path}. Try deleting Generated.xcconfig, then run flutter pub get"
@@ -40,13 +40,31 @@ post_install do |installer|
     
     # Fix for Xcode 15 and iOS 17
     target.build_configurations.each do |config|
-      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '12.0'
+      # Set minimum iOS version
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
+      
       # Disable problematic compiler flags
-      config.build_settings['OTHER_CFLAGS'] ||= ['$(inherited)']
-      config.build_settings['OTHER_CFLAGS'] << '-Wno-error=incompatible-pointer-types'
-      # Remove -G flag that's causing the error
-      if config.build_settings['OTHER_CFLAGS'].include?('-G')
-        config.build_settings['OTHER_CFLAGS'].delete('-G')
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= ["$(inherited)", "AUDIO_SESSION_MICROPHONE=0"]
+      
+      # Fix for arm64 architecture
+      config.build_settings['EXCLUDED_ARCHS[sdk=iphonesimulator*]'] = 'arm64'
+      
+      # Remove problematic compiler flags
+      if config.build_settings['OTHER_CFLAGS'].is_a?(Array)
+        config.build_settings['OTHER_CFLAGS'] = config.build_settings['OTHER_CFLAGS'].reject { |f| f == '-G' }
+      end
+      
+      # Add additional compiler flags if needed
+      config.build_settings['SWIFT_VERSION'] = '5.0'
+      config.build_settings['ENABLE_BITCODE'] = 'NO'
+    end
+  end
+  
+  # This is necessary for Xcode 14+
+  installer.generated_projects.each do |project|
+    project.targets.each do |target|
+      target.build_configurations.each do |config|
+        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
       end
     end
   end
