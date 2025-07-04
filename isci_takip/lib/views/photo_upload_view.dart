@@ -108,31 +108,91 @@ class _PhotoUploadViewState extends State<PhotoUploadView> {
     }
   }
 
-  Future<void> _uploadImage() async {
-    if (_pickedFile == null) return;
+// photo_upload_view.dart içinde _uploadImage metodunu güncelle:
 
+Future<void> _uploadImage() async {
+  if (_pickedFile == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Lütfen bir fotoğraf seçin')),
+    );
+    return;
+  }
+
+  try {
     setState(() {
       _isUploading = true;
     });
 
     final viewModel = Provider.of<PhotoUploadViewModel>(context, listen: false);
+    
+    // Progress göstergeli dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return const AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 20),
+              Text('Fotoğraf yükleniyor...'),
+            ],
+          ),
+        );
+      },
+    );
+    
+    print('Fotoğraf yükleme başlıyor: ${widget.project.id}');
     final success = await viewModel.uploadPhotoFromXFile(widget.project.id, _pickedFile!);
-
-    setState(() {
-      _isUploading = false;
-    });
+    print('Fotoğraf yükleme sonucu: $success');
+    
+    // Dialog'u kapat
+    if (mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+    }
+    
+    if (mounted) {
+      setState(() {
+        _isUploading = false;
+      });
+    }
 
     if (success && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Fotoğraf başarıyla yüklendi')),
+        const SnackBar(
+          content: Text('Fotoğraf başarıyla yüklendi'),
+          backgroundColor: Colors.green,
+        ),
       );
       Navigator.pop(context, true); // Başarılı yükleme ile geri dön
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(viewModel.errorMessage ?? 'Fotoğraf yüklenirken bir hata oluştu')),
+        SnackBar(
+          content: Text(viewModel.errorMessage ?? 'Fotoğraf yüklenirken bir hata oluştu'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  } catch (e) {
+    print('Fotoğraf yükleme hatası: $e');
+    if (mounted) {
+      // Dialog'u kapat
+      Navigator.of(context, rootNavigator: true).pop();
+      
+      setState(() {
+        _isUploading = false;
+      });
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Fotoğraf yüklenirken bir hata oluştu: $e'),
+          backgroundColor: Colors.red,
+        ),
       );
     }
   }
+}
 
   @override
   Widget build(BuildContext context) {

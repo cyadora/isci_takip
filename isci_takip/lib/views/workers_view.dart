@@ -1,6 +1,8 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import '../models/worker_model.dart';
 import '../view_models/worker_view_model.dart';
 import '../view_models/user_view_model.dart';
@@ -135,7 +137,7 @@ class WorkerListItem extends StatelessWidget {
           ),
         ),
         title: Text('${worker.firstName} ${worker.lastName}'),
-        subtitle: Text(worker.address ?? 'Adres belirtilmemiş'),
+        subtitle: Text('${worker.position.isNotEmpty ? worker.position : "Pozisyon belirtilmemiş"} - ${worker.address}'),
         trailing: Consumer<UserViewModel>(builder: (context, userViewModel, child) {
           return Row(
             mainAxisSize: MainAxisSize.min,
@@ -166,11 +168,9 @@ class WorkerListItem extends StatelessWidget {
               IconButton(
                 icon: const Icon(Icons.info_outline),
                 onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => WorkerDetailsView(workerId: worker.id),
-                    ),
+                  showDialog(
+                    context: context,
+                    builder: (context) => WorkerDetailsDialog(worker: worker),
                   );
                 },
                 tooltip: 'Detaylar',
@@ -179,12 +179,10 @@ class WorkerListItem extends StatelessWidget {
           );
         }),
         onTap: () {
-          // Navigate to worker details view
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => WorkerDetailsView(workerId: worker.id),
-            ),
+          // İşçi detay diyaloğunu göster
+          showDialog(
+            context: context,
+            builder: (context) => WorkerDetailsDialog(worker: worker),
           );
         },
       ),
@@ -212,11 +210,25 @@ class _AddEditWorkerDialogState extends State<AddEditWorkerDialog> {
   final _surnameController = TextEditingController();
   final _phoneController = TextEditingController();
   final _addressController = TextEditingController();
-  bool _isActive = true;
+  final _positionController = TextEditingController(); 
+  final _positions = [
+    'İşçi',
+    'Usta',
+    'Formen',
+    'Şoför',
+    'Operatör',
+    'Teknisyen',
+    'Mühendis',
+    'Diğer',
+  ];
+  
+  final _picker = ImagePicker();
   bool _isLoading = false;
-  final ImagePicker _picker = ImagePicker();
+  bool _isActive = true;
   String _selectedPhotoUrl = '';
-
+  
+  bool get isEditing => widget.worker != null;
+  
   @override
   void initState() {
     super.initState();
@@ -225,24 +237,68 @@ class _AddEditWorkerDialogState extends State<AddEditWorkerDialog> {
       _surnameController.text = widget.worker!.lastName;
       _phoneController.text = widget.worker!.phone;
       _addressController.text = widget.worker!.address;
+      _positionController.text = widget.worker!.position;
       _isActive = widget.worker!.safetyDocsComplete;
       _selectedPhotoUrl = widget.worker!.photoUrl;
     }
   }
-
+  
   @override
   void dispose() {
     _nameController.dispose();
     _surnameController.dispose();
     _phoneController.dispose();
     _addressController.dispose();
+    _positionController.dispose();
     super.dispose();
   }
-
+  
+  // Platform uyumlu işçi fotoğrafı görüntüleme metodu
+  Widget _buildWorkerImage(String photoUrl) {
+    if (photoUrl.isEmpty) {
+      return const Icon(Icons.person, size: 50);
+    }
+    
+    // Web platformu için veya http/https ile başlayan URL'ler için
+    if (photoUrl.startsWith('http')) {
+      return ClipOval(
+        child: Image.network(
+          photoUrl,
+          width: 100,
+          height: 100,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            print('Fotoğraf yükleme hatası: $error');
+            return const Icon(Icons.person, size: 50);
+          },
+        ),
+      );
+    } 
+    // Mobil platformlar için dosya yolu
+    else {
+      try {
+        return ClipOval(
+          child: Image.file(
+            File(photoUrl),
+            width: 100,
+            height: 100,
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) {
+              print('Fotoğraf yükleme hatası: $error');
+              return const Icon(Icons.person, size: 50);
+            },
+          ),
+        );
+      } catch (e) {
+        print('Fotoğraf yükleme hatası: $e');
+        // Herhangi bir hata durumunda placeholder göster
+        return const Icon(Icons.person, size: 50);
+      }
+    }
+  }
+  
   @override
   Widget build(BuildContext context) {
-    final isEditing = widget.worker != null;
-    
     return AlertDialog(
       title: Text(isEditing ? 'İşçi Düzenle' : 'Yeni İşçi Ekle'),
       content: SingleChildScrollView(
@@ -251,97 +307,102 @@ class _AddEditWorkerDialogState extends State<AddEditWorkerDialog> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextFormField(
-                controller: _nameController,
-                decoration: const InputDecoration(
-                  labelText: 'Ad *',
-                  border: OutlineInputBorder(),
+              if (_isLoading)
+                const Padding(
+                  padding: EdgeInsets.all(8.0),
+                  child: Center(child: CircularProgressIndicator()),
                 ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Ad alanı zorunludur';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _surnameController,
-                decoration: const InputDecoration(
-                  labelText: 'Soyad *',
-                  border: OutlineInputBorder(),
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Soyad alanı zorunludur';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _phoneController,
-                decoration: const InputDecoration(
-                  labelText: 'Telefon',
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: TextInputType.phone,
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _addressController,
-                decoration: const InputDecoration(
-                  labelText: 'Adres',
-                  border: OutlineInputBorder(),
-                ),
-                maxLines: 2,
-              ),
-              const SizedBox(height: 16),
-              // Fotoğraf seçme bölümü
-              Container(
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                padding: const EdgeInsets.all(16),
-                child: Column(
+              
+              // Fotoğraf seçimi
+              Center(
+                child: Stack(
                   children: [
-                    if (_selectedPhotoUrl.isNotEmpty)
-                      CircleAvatar(
-                        radius: 40,
-                        backgroundImage: _selectedPhotoUrl.startsWith('http')
-                            ? NetworkImage(_selectedPhotoUrl)
-                            : FileImage(File(_selectedPhotoUrl)) as ImageProvider,
-                        backgroundColor: Colors.grey[300],
-                      )
-                    else
-                      CircleAvatar(
-                        radius: 40,
-                        backgroundColor: Colors.grey[300],
-                        child: const Icon(Icons.person, size: 40),
-                      ),
-                    const SizedBox(height: 8),
-                    ElevatedButton.icon(
-                      onPressed: _pickImage,
-                      icon: const Icon(Icons.photo_camera),
-                      label: const Text('Fotoğraf Seç'),
+                    CircleAvatar(
+                      radius: 50,
+                      backgroundColor: Colors.grey[300],
+                      child: _buildWorkerImage(_selectedPhotoUrl),
                     ),
-                    if (_selectedPhotoUrl.isNotEmpty)
-                      TextButton(
-                        onPressed: () {
-                          setState(() {
-                            _selectedPhotoUrl = '';
-                          });
-                        },
-                        child: const Text('Fotoğrafı Kaldır'),
+                    Positioned(
+                      bottom: 0,
+                      right: 0,
+                      child: CircleAvatar(
+                        backgroundColor: Theme.of(context).primaryColor,
+                        radius: 18,
+                        child: IconButton(
+                          icon: const Icon(Icons.camera_alt, size: 18, color: Colors.white),
+                          onPressed: _pickImage,
+                        ),
                       ),
+                    ),
                   ],
                 ),
               ),
               const SizedBox(height: 16),
+              
+              // Ad
+              TextFormField(
+                controller: _nameController,
+                decoration: const InputDecoration(labelText: 'Ad'),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Lütfen işçinin adını girin';
+                  }
+                  return null;
+                },
+              ),
+              
+              // Soyad
+              TextFormField(
+                controller: _surnameController,
+                decoration: const InputDecoration(labelText: 'Soyad'),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Lütfen işçinin soyadını girin';
+                  }
+                  return null;
+                },
+              ),
+              
+              // Telefon
+              TextFormField(
+                controller: _phoneController,
+                decoration: const InputDecoration(labelText: 'Telefon'),
+                keyboardType: TextInputType.phone,
+              ),
+              
+              // Adres
+              TextFormField(
+                controller: _addressController,
+                decoration: const InputDecoration(labelText: 'Adres'),
+                maxLines: 2,
+              ),
+              
+              // Pozisyon (dropdown)
+              DropdownButtonFormField<String>(
+                value: _positions.contains(_positionController.text) 
+                    ? _positionController.text 
+                    : _positions.first,
+                decoration: const InputDecoration(labelText: 'Pozisyon'),
+                items: _positions.map((position) {
+                  return DropdownMenuItem(
+                    value: position,
+                    child: Text(position),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  if (value != null) {
+                    setState(() {
+                      _positionController.text = value;
+                    });
+                  }
+                },
+              ),
+              
+              // Aktif/Pasif durumu
               Row(
                 children: [
-                  const Text('İş Güvenliği Evrakları Tamamlandı:'),
+                  const Text('Güvenlik Belgeleri Tamamlandı:'),
+                  const SizedBox(width: 8),
                   Switch(
                     value: _isActive,
                     onChanged: (value) {
@@ -438,19 +499,70 @@ class _AddEditWorkerDialogState extends State<AddEditWorkerDialog> {
     final viewModel = Provider.of<WorkerViewModel>(context, listen: false);
     
     try {
+      if (!_formKey.currentState!.validate()) {
+        return; // Form doğrulaması başarısız olursa işlemi durdur
+      }
+      
       setState(() => _isLoading = true);
       
+      String photoUrl = '';
+      
+      // Fotoğraf seçildiyse önce Firebase Storage'a yükle
+      if (_selectedPhotoUrl.isNotEmpty && !_selectedPhotoUrl.startsWith('http')) {
+        try {
+          // Dosya adını oluştur
+          final fileName = '${DateTime.now().millisecondsSinceEpoch}_${_nameController.text}_${_surnameController.text}.jpg';
+          
+          // Firebase Storage'a yükle
+          final storageRef = FirebaseStorage.instance
+              .ref()
+              .child('worker_photos')
+              .child(fileName);
+          
+          // Dosyayı yükle
+          final uploadTask = await storageRef.putFile(File(_selectedPhotoUrl));
+          
+          // Yükleme tamamlandığında URL'yi al
+          photoUrl = await uploadTask.ref.getDownloadURL();
+          
+          print('Fotoğraf başarıyla yüklendi: $photoUrl');
+        } catch (e) {
+          print('Fotoğraf yükleme hatası: $e');
+          // Hata durumunda kullanıcıya bildir ama işleme devam et
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Fotoğraf yüklenemedi: $e')),
+          );
+        }
+      } else if (_selectedPhotoUrl.startsWith('http')) {
+        // Eğer zaten bir URL ise (düzenleme modu)
+        photoUrl = _selectedPhotoUrl;
+      }
+      
+      // Fotoğraf URL'sini belirle
+      String finalPhotoUrl = '';
+      
+      // Eğer yeni bir fotoğraf yüklendiyse, onun URL'sini kullan
+      if (photoUrl.isNotEmpty) {
+        finalPhotoUrl = photoUrl;
+      }
+      // Eğer düzenleme modundaysa ve fotoğraf değişmediyse, mevcut URL'yi kullan
+      else if (_selectedPhotoUrl.isNotEmpty && _selectedPhotoUrl.startsWith('http')) {
+        finalPhotoUrl = _selectedPhotoUrl;
+      }
+      // Yerel dosya seçildiyse ve yüklenemezse, boş bırak
+      
       final worker = WorkerModel(
-        id: widget.worker?.id ?? '',
-        firstName: _nameController.text,
-        lastName: _surnameController.text,
-        phone: _phoneController.text,
-        address: _addressController.text,
-        photoUrl: _selectedPhotoUrl,
-        safetyDocsComplete: _isActive,
-        entryDocsComplete: false,
-        isActive: true, // Yeni işçiler varsayılan olarak aktif
-      );
+          id: widget.worker?.id ?? '',
+          firstName: _nameController.text,
+          lastName: _surnameController.text,
+          phone: _phoneController.text,
+          address: _addressController.text,
+          photoUrl: finalPhotoUrl,
+          position: _positionController.text, 
+          safetyDocsComplete: _isActive,
+          entryDocsComplete: widget.worker?.entryDocsComplete ?? false,
+          isActive: true,
+        );
       
       bool success;
       if (widget.worker != null) {
@@ -483,7 +595,68 @@ class _AddEditWorkerDialogState extends State<AddEditWorkerDialog> {
 class WorkerDetailsDialog extends StatelessWidget {
   final WorkerModel worker;
 
-  const WorkerDetailsDialog({super.key, required this.worker});
+  const WorkerDetailsDialog({Key? key, required this.worker}) : super(key: key);
+
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '$label: ',
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          Expanded(
+            child: Text(value),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  // Platform uyumlu işçi fotoğrafı görüntüleme metodu
+  Widget _buildWorkerImage(String photoUrl) {
+    // Web platformu için veya http/https ile başlayan URL'ler için
+    if (photoUrl.startsWith('http')) {
+      return Image.network(
+        photoUrl,
+        width: 100,
+        height: 100,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) {
+          return _buildPlaceholderImage();
+        },
+      );
+    } 
+    // Mobil platformlar için dosya yolu
+    else {
+      try {
+        return Image.file(
+          File(photoUrl),
+          width: 100,
+          height: 100,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            return _buildPlaceholderImage();
+          },
+        );
+      } catch (e) {
+        // Herhangi bir hata durumunda placeholder göster
+        return _buildPlaceholderImage();
+      }
+    }
+  }
+  
+  // Placeholder resim widget'ı
+  Widget _buildPlaceholderImage() {
+    return Container(
+      width: 100,
+      height: 100,
+      color: Colors.grey[300],
+      child: const Icon(Icons.person, size: 50),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -500,20 +673,7 @@ class WorkerDetailsDialog extends StatelessWidget {
                 child: Center(
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(50),
-                    child: Image.network(
-                      worker.photoUrl,
-                      width: 100,
-                      height: 100,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return Container(
-                          width: 100,
-                          height: 100,
-                          color: Colors.grey[300],
-                          child: const Icon(Icons.person, size: 50),
-                        );
-                      },
-                    ),
+                    child: _buildWorkerImage(worker.photoUrl),
                   ),
                 ),
               ),
@@ -545,24 +705,6 @@ class WorkerDetailsDialog extends StatelessWidget {
             child: const Text('Düzenle'),
           ),
       ],
-    );
-  }
-
-  Widget _buildDetailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '$label: ',
-            style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
-          Expanded(
-            child: Text(value),
-          ),
-        ],
-      ),
     );
   }
 }

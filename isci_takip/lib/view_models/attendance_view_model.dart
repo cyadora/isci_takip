@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/firestore_service.dart';
+import '../models/user_model.dart';
 
 class AttendanceViewModel extends ChangeNotifier {
   final FirestoreService _firestoreService = FirestoreService();
@@ -11,8 +12,8 @@ class AttendanceViewModel extends ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
   
-  // Mark attendance for multiple workers
-  Future<Map<String, bool>> markAttendance(String projectId, Map<String, bool> attendanceMap) async {
+  // Mark attendance for multiple workers - bugünün tarihi için
+  Future<Map<String, bool>> markAttendance(String projectId, Map<String, bool> attendanceMap, UserModel currentUser) async {
     try {
       _isLoading = true;
       notifyListeners();
@@ -29,12 +30,64 @@ class AttendanceViewModel extends ChangeNotifier {
         if (exists) {
           existingRecords[workerId] = true;
         } else {
-          // Create new attendance record
+          // Create new attendance record with user information
           await _firestoreService.createAttendanceRecord(
             projectId,
             workerId,
             dateString,
             attendanceMap[workerId] ?? false,
+            createdByUid: currentUser.uid,
+            createdByName: currentUser.displayName ?? currentUser.email,
+          );
+        }
+      }
+      
+      _isLoading = false;
+      notifyListeners();
+      
+      return existingRecords;
+    } catch (e) {
+      _errorMessage = 'Yoklama kaydedilirken bir hata oluştu: $e';
+      _isLoading = false;
+      notifyListeners();
+      return {};
+    }
+  }
+  
+  // Belirli bir tarih için yoklama kaydet - YENİ METOD
+  Future<Map<String, bool>> markAttendanceForDate(
+    String projectId, 
+    Map<String, bool> attendanceMap, 
+    String dateString,
+    UserModel currentUser,
+    {bool forceUpdate = false}
+  ) async {
+    try {
+      _isLoading = true;
+      notifyListeners();
+      
+      // Check for existing attendance records for the specified date
+      Map<String, bool> existingRecords = {};
+      
+      for (final workerId in attendanceMap.keys) {
+        final exists = await _firestoreService.checkAttendanceExists(
+          projectId, 
+          workerId, 
+          dateString
+        );
+        
+        if (exists && !forceUpdate) {
+          // Kayıt var ve güncelleme zorlanmıyorsa, mevcut kayıtları döndür
+          existingRecords[workerId] = true;
+        } else {
+          // Yeni kayıt oluştur veya mevcut kaydı güncelle (forceUpdate=true ise)
+          await _firestoreService.createAttendanceRecord(
+            projectId,
+            workerId,
+            dateString,
+            attendanceMap[workerId] ?? false,
+            createdByUid: currentUser.uid,
+            createdByName: currentUser.displayName ?? currentUser.email,
           );
         }
       }
@@ -52,7 +105,7 @@ class AttendanceViewModel extends ChangeNotifier {
   }
   
   // Get attendance records for a project on a specific date
-  Future<Map<String, bool>> getAttendanceForDate(String projectId, String dateString) async {
+  Future<Map<String, dynamic>> getAttendanceForDate(String projectId, String dateString) async {
     try {
       _isLoading = true;
       notifyListeners();
@@ -72,7 +125,7 @@ class AttendanceViewModel extends ChangeNotifier {
   }
   
   // Get monthly attendance records for a worker in a project
-  Future<Map<String, bool>> getMonthlyAttendance(String projectId, String workerId, int year, int month) async {
+  Future<Map<String, Map<String, dynamic>>> getMonthlyAttendance(String projectId, String workerId, int year, int month) async {
     try {
       _isLoading = true;
       notifyListeners();
@@ -80,14 +133,23 @@ class AttendanceViewModel extends ChangeNotifier {
       // Get the number of days in the specified month
       final daysInMonth = DateTime(year, month + 1, 0).day;
       
-      // Create a map to store attendance status for each day
-      final Map<String, bool> monthlyAttendance = {};
+      // Create a map to store attendance details for each day
+      final Map<String, Map<String, dynamic>> monthlyAttendance = {};
       
       // Fetch attendance for each day in the month
       for (int day = 1; day <= daysInMonth; day++) {
         final dateString = "$year-${month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}";
-        final dayAttendance = await _firestoreService.getWorkerAttendanceForDate(projectId, workerId, dateString);
-        monthlyAttendance[dateString] = dayAttendance;
+        
+        // Detaylı yoklama bilgilerini al
+        final dayAttendanceDetails = await _firestoreService.getWorkerAttendanceDetailsForDate(
+          projectId, 
+          workerId, 
+          dateString
+        );
+        
+        if (dayAttendanceDetails != null) {
+          monthlyAttendance[dateString] = dayAttendanceDetails;
+        }
       }
       
       _isLoading = false;

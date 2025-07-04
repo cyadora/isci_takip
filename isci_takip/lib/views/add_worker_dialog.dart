@@ -18,12 +18,33 @@ class _AddWorkerDialogState extends State<AddWorkerDialog> {
   final _nameController = TextEditingController();
   final _surnameController = TextEditingController();
   final _phoneController = TextEditingController();
-  final _positionController = TextEditingController();
+  final _positionController = TextEditingController(); // YENİ
   final _salaryController = TextEditingController();
   final _addressController = TextEditingController();
   bool _isActive = true;
   DateTime? _startDate;
   bool _isLoading = false;
+  
+  // Pozisyon seçenekleri - YENİ
+  final List<String> _positions = [
+    'Usta',
+    'Kalfa',
+    'İşçi',
+    'Operatör',
+    'Demirci',
+    'Duvarcı',
+    'Boyacı',
+    'Elektrikçi',
+    'Tesisatçı',
+    'Marangoz',
+    'Asfaltçı',
+    'Hafriyatçı',
+    'Vinç Operatörü',
+    'Forklift Operatörü',
+    'Şoför',
+    'Bekçi',
+    'Diğer'
+  ];
   
   // Photo upload related variables
   File? _selectedImage;
@@ -38,6 +59,7 @@ class _AddWorkerDialogState extends State<AddWorkerDialog> {
     _positionController.dispose();
     _salaryController.dispose();
     _addressController.dispose();
+    _positionController.dispose(); // YENİ
     super.dispose();
   }
 
@@ -74,6 +96,31 @@ class _AddWorkerDialogState extends State<AddWorkerDialog> {
                 validator: (value) {
                   if (value == null || value.isEmpty) {
                     return 'Soyad alanı zorunludur';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              // Pozisyon dropdown - YENİ
+              DropdownButtonFormField<String>(
+                decoration: const InputDecoration(
+                  labelText: 'Görev/Pozisyon *',
+                  border: OutlineInputBorder(),
+                ),
+                items: _positions.map((String position) {
+                  return DropdownMenuItem<String>(
+                    value: position,
+                    child: Text(position),
+                  );
+                }).toList(),
+                onChanged: (String? newValue) {
+                  if (newValue != null) {
+                    _positionController.text = newValue;
+                  }
+                },
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Görev seçimi zorunludur';
                   }
                   return null;
                 },
@@ -338,6 +385,7 @@ class _AddWorkerDialogState extends State<AddWorkerDialog> {
       phone: _phoneController.text,
       address: _addressController.text,
       photoUrl: '',
+      position: _positionController.text, // YENİ
       safetyDocsComplete: _isActive,
       entryDocsComplete: false,
     );
@@ -359,6 +407,7 @@ class _AddWorkerDialogState extends State<AddWorkerDialog> {
           final updatedWorker = newWorker.copyWith(
             id: workerId,
             photoUrl: photoUrl,
+            position: _positionController.text, // YENİ
           );
           await viewModel.updateWorker(updatedWorker);
         }

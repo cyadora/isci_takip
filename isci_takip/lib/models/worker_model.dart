@@ -7,6 +7,7 @@ class WorkerModel {
   final String phone;
   final String address;
   final String photoUrl;
+  final String position; // YENİ ALAN - Görev/Pozisyon
   final bool safetyDocsComplete;
   final bool entryDocsComplete;
   final bool isActive;
@@ -18,6 +19,7 @@ class WorkerModel {
     required this.phone,
     required this.address,
     this.photoUrl = '',
+    this.position = '', // YENİ - Varsayılan boş string
     this.safetyDocsComplete = false,
     this.entryDocsComplete = false,
     this.isActive = true,
@@ -31,6 +33,7 @@ class WorkerModel {
       phone: data['phone'] ?? '',
       address: data['address'] ?? '',
       photoUrl: data['photoUrl'] ?? '',
+      position: data['position'] ?? '', // YENİ
       safetyDocsComplete: data['safetyDocsComplete'] ?? false,
       entryDocsComplete: data['entryDocsComplete'] ?? false,
       isActive: data['isActive'] ?? true,
@@ -44,6 +47,7 @@ class WorkerModel {
       'phone': phone,
       'address': address,
       'photoUrl': photoUrl,
+      'position': position, // YENİ
       'safetyDocsComplete': safetyDocsComplete,
       'entryDocsComplete': entryDocsComplete,
       'isActive': isActive,
@@ -57,6 +61,7 @@ class WorkerModel {
     String? phone,
     String? address,
     String? photoUrl,
+    String? position, // YENİ
     bool? safetyDocsComplete,
     bool? entryDocsComplete,
     bool? isActive,
@@ -68,6 +73,7 @@ class WorkerModel {
       phone: phone ?? this.phone,
       address: address ?? this.address,
       photoUrl: photoUrl ?? this.photoUrl,
+      position: position ?? this.position, // YENİ
       safetyDocsComplete: safetyDocsComplete ?? this.safetyDocsComplete,
       entryDocsComplete: entryDocsComplete ?? this.entryDocsComplete,
       isActive: isActive ?? this.isActive,

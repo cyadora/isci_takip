@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/project_model.dart';
 import '../models/worker_model.dart';
 import '../view_models/worker_view_model.dart';
@@ -17,7 +18,8 @@ class MonthlyReportView extends StatefulWidget {
 
 class _MonthlyReportViewState extends State<MonthlyReportView> {
   final Map<String, WorkerModel> _workersMap = {};
-  final Map<String, Map<String, bool>> _monthlyAttendanceMap = {};
+  // Değiştirildi: bool yerine Map<String, dynamic> kullanarak detaylı bilgi saklama
+  final Map<String, Map<String, Map<String, dynamic>>> _monthlyAttendanceMap = {};
   bool _isLoading = true;
   List<String> _assignedWorkerIds = [];
   
@@ -117,8 +119,15 @@ class _MonthlyReportViewState extends State<MonthlyReportView> {
     return months[month - 1];
   }
   
-  int _getPresentDaysCount(Map<String, bool> attendanceMap) {
-    return attendanceMap.values.where((present) => present).length;
+  int _getPresentDaysCount(Map<String, Map<String, dynamic>> attendanceMap) {
+    int count = 0;
+    for (var entry in attendanceMap.values) {
+      // Yeni format: Map içinde 'present' anahtarı kontrol ediliyor
+      if (entry.containsKey('present') && entry['present'] == true) {
+        count++;
+      }
+    }
+    return count;
   }
   
   @override
@@ -193,7 +202,26 @@ class _MonthlyReportViewState extends State<MonthlyReportView> {
           margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
           child: ListTile(
             title: Text('${worker.firstName} ${worker.lastName}'),
-            subtitle: Text('Mevcut Gün: $presentDays / $daysInMonth (%$attendancePercentage)'),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Mevcut Gün: $presentDays / $daysInMonth (%$attendancePercentage)'),
+                if (monthlyAttendance.isNotEmpty)
+                  FutureBuilder<String>(
+                    future: _getLastAttendanceInfo(monthlyAttendance),
+                    builder: (context, snapshot) {
+                      if (snapshot.hasData && snapshot.data!.isNotEmpty) {
+                        return Text(
+                          snapshot.data!,
+                          style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
+                        );
+                      }
+                      return const SizedBox.shrink();
+                    },
+                  ),
+              ],
+            ),
+            isThreeLine: true,
             trailing: CircleAvatar(
               backgroundColor: Colors.blue,
               backgroundImage: worker.photoUrl.isNotEmpty ? NetworkImage(worker.photoUrl) : null,
@@ -211,7 +239,36 @@ class _MonthlyReportViewState extends State<MonthlyReportView> {
     );
   }
   
-  void _showMonthlyAttendanceDetails(WorkerModel worker, Map<String, bool> monthlyAttendance) {
+  // Son puantaj kaydının bilgilerini döndüren yardımcı metod
+  Future<String> _getLastAttendanceInfo(Map<String, Map<String, dynamic>> monthlyAttendance) async {
+    if (monthlyAttendance.isEmpty) return '';
+    
+    // En son kaydı bul (tarih sıralamasına göre)
+    final sortedDates = monthlyAttendance.keys.toList()
+      ..sort((a, b) => b.compareTo(a)); // Tarihleri azalan sırada sırala
+    
+    if (sortedDates.isEmpty) return '';
+    
+    final lastDate = sortedDates.first;
+    final lastAttendance = monthlyAttendance[lastDate];
+    
+    if (lastAttendance == null) return '';
+    
+    final createdByName = lastAttendance.containsKey('createdByName') ? lastAttendance['createdByName'] : null;
+    final createdAt = lastAttendance.containsKey('createdAt') ? lastAttendance['createdAt'] : null;
+    
+    if (createdByName == null) return '';
+    
+    if (createdAt != null && createdAt is Timestamp) {
+      final dateTime = createdAt.toDate();
+      final formattedDate = '${dateTime.day}.${dateTime.month}.${dateTime.year} ${dateTime.hour}:${dateTime.minute.toString().padLeft(2, '0')}';
+      return 'Son kayıt: $createdByName, $formattedDate';
+    }
+    
+    return 'Son kayıt: $createdByName';
+  }
+  
+  void _showMonthlyAttendanceDetails(WorkerModel worker, Map<String, Map<String, dynamic>> monthlyAttendance) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -224,7 +281,17 @@ class _MonthlyReportViewState extends State<MonthlyReportView> {
             itemBuilder: (context, index) {
               final entry = monthlyAttendance.entries.elementAt(index);
               final dateStr = entry.key;
-              final present = entry.value;
+              final attendanceDetails = entry.value;
+              
+              // Yoklama durumunu al
+              final present = attendanceDetails.containsKey('present') ? 
+                  attendanceDetails['present'] as bool? ?? false : false;
+              
+              // Kayıt yapan kullanıcı bilgilerini al
+              final createdByName = attendanceDetails.containsKey('createdByName') ? 
+                  attendanceDetails['createdByName'] as String? ?? 'Bilinmiyor' : 'Bilinmiyor';
+              final createdAt = attendanceDetails.containsKey('createdAt') ? 
+                  attendanceDetails['createdAt'] as Timestamp? : null;
               
               // Parse the date string (format: YYYY-MM-DD)
               final dateParts = dateStr.split('-');
@@ -237,13 +304,30 @@ class _MonthlyReportViewState extends State<MonthlyReportView> {
               // Format the date for display
               final formattedDate = DateFormat('dd MMMM yyyy', 'tr_TR').format(date);
               
+              // Kayıt zamanını formatla
+              String createdAtStr = '';
+              if (createdAt != null) {
+                final createdDateTime = createdAt.toDate();
+                createdAtStr = DateFormat('dd.MM.yyyy HH:mm', 'tr_TR').format(createdDateTime);
+              }
+              
               return ListTile(
                 leading: Icon(
                   present ? Icons.check_circle : Icons.cancel,
                   color: present ? Colors.green : Colors.red,
                 ),
                 title: Text(formattedDate),
-                subtitle: Text(present ? 'Mevcut' : 'Yok'),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(present ? 'Mevcut' : 'Yok'),
+                    Text(
+                      'Kayıt: $createdByName${createdAtStr.isNotEmpty ? ', $createdAtStr' : ''}',
+                      style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
+                    ),
+                  ],
+                ),
+                isThreeLine: true,
               );
             },
           ),

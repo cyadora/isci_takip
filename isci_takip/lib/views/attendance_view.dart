@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/project_model.dart';
 import '../models/worker_model.dart';
+import '../models/user_model.dart';
 import '../view_models/worker_view_model.dart';
 import '../view_models/project_view_model.dart';
 import '../view_models/attendance_view_model.dart';
+import '../view_models/user_view_model.dart';
 import '../services/firestore_service.dart';
 import 'monthly_report_view.dart';
 
@@ -23,6 +26,7 @@ class _AttendanceViewState extends State<AttendanceView> {
   bool _isLoading = false;
   List<String> _assignedWorkerIds = [];
   DateTime _selectedDate = DateTime.now();
+  bool _showAttendedWorkers = false; // Puantaj girişi yapılanları gösterme durumu
 
   @override
   void initState() {
@@ -36,40 +40,28 @@ class _AttendanceViewState extends State<AttendanceView> {
     });
 
     try {
-      // Get the latest project data to ensure we have the most up-to-date assignedWorkerIds
-      final projectViewModel = Provider.of<ProjectViewModel>(context, listen: false);
-      // Use the FirestoreService directly since _firestoreService is private
       final firestoreService = FirestoreService();
       final updatedProject = await firestoreService.getProject(widget.project.id);
       
       if (updatedProject != null) {
         _assignedWorkerIds = updatedProject.assignedWorkerIds;
       } else {
-        // Fallback to the project passed to the widget
         _assignedWorkerIds = widget.project.assignedWorkerIds;
       }
       
-      // Make sure worker view model is initialized
       final workerViewModel = Provider.of<WorkerViewModel>(context, listen: false);
       if (workerViewModel.workers.isEmpty) {
         workerViewModel.init();
-        // Wait for the workers to load
         await Future.delayed(const Duration(seconds: 1));
       }
 
-      // Create a map of worker IDs to worker models for easy lookup
       for (final worker in workerViewModel.workers) {
         _workersMap[worker.id] = worker;
       }
 
-      // Debug output
-      print('Assigned worker IDs: $_assignedWorkerIds');
-      print('Workers map keys: ${_workersMap.keys.toList()}');
-
-      // Initialize attendance map with all workers present by default
-      for (final workerId in _assignedWorkerIds) {
-        _attendanceMap[workerId] = true;
-      }
+      // Seçili tarih için mevcut yoklamaları yükle
+      await _loadAttendanceForDate();
+      
     } catch (e) {
       if (mounted) {
         print('Error loading assigned workers: $e');
@@ -86,12 +78,132 @@ class _AttendanceViewState extends State<AttendanceView> {
     }
   }
 
+  // Puantaj kayıtlarını saklayacak haritalar
+  final Map<String, dynamic> _attendanceDetails = {};
+  
+  Future<void> _loadAttendanceForDate() async {
+    final dateString = _getFormattedDateString(_selectedDate);
+    final attendanceViewModel = Provider.of<AttendanceViewModel>(context, listen: false);
+    final userViewModel = Provider.of<UserViewModel>(context, listen: false);
+    final bool isAdmin = userViewModel.isAdmin;
+    
+    // Mevcut yoklama kayıtlarını al
+    final existingAttendance = await attendanceViewModel.getAttendanceForDate(
+      widget.project.id,
+      dateString,
+    );
+    
+    // Yoklama haritasını güncelle
+    _attendanceMap.clear();
+    _attendanceDetails.clear();
+    
+    for (final workerId in _assignedWorkerIds) {
+      bool hasAttendanceRecord = existingAttendance.containsKey(workerId);
+      bool isPresent = false;
+      
+      if (hasAttendanceRecord) {
+        // Yeni format: Map<String, dynamic> içinde detaylar var
+        if (existingAttendance[workerId] is Map) {
+          final details = existingAttendance[workerId];
+          if (details is Map<String, dynamic>) {
+            isPresent = details.containsKey('present') ? 
+                details['present'] as bool? ?? false : false;
+            _attendanceDetails[workerId] = details;
+          }
+        } else {
+          // Eski format: doğrudan boolean değer
+          isPresent = existingAttendance[workerId] as bool? ?? false;
+        }
+        
+        // Admin değilse ve puantaj gösterme kapalıysa, kayıt varsa gösterme
+        if (!isAdmin && !_showAttendedWorkers && hasAttendanceRecord) {
+          continue; // Bu işçiyi listeden atla
+        }
+      }
+      
+      // Kayıt yoksa veya gösterilecekse haritaya ekle
+      _attendanceMap[workerId] = isPresent;
+    }
+    
+    setState(() {});
+  }
+
+  String _getFormattedDateString(DateTime date) {
+    return "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
+  }
+
+  Future<void> _selectDate() async {
+    // Admin kullanıcıların geriye dönük puantaj girebilmesi, diğer kullanıcıların sadece o gün için giriş yapabilmesi
+    final userViewModel = Provider.of<UserViewModel>(context, listen: false);
+    final bool isAdmin = userViewModel.isAdmin;
+    
+    final DateTime now = DateTime.now();
+    final DateTime today = DateTime(now.year, now.month, now.day);
+    
+    // Admin için 1 yıl geriye, normal kullanıcılar için sadece bugün
+    final DateTime firstDate = isAdmin 
+        ? today.subtract(const Duration(days: 365)) 
+        : today;
+    
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: isAdmin ? _selectedDate : today,
+      firstDate: firstDate,
+      lastDate: today, // Bugüne kadar
+      locale: const Locale('tr', 'TR'),
+    );
+    
+    if (picked != null && picked != _selectedDate) {
+      setState(() {
+        _selectedDate = picked;
+      });
+      await _loadAttendanceForDate();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text('Sarsılmaz İnşaat - Yoklama: ${widget.project.name}'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        actions: [
+          // Puantaj girişi yapılanları göster/gizle toggle'ı
+          Consumer<UserViewModel>(
+            builder: (context, userViewModel, child) {
+              // Sadece admin için göster
+              if (userViewModel.isAdmin) {
+                return IconButton(
+                  icon: Icon(
+                    _showAttendedWorkers ? Icons.visibility : Icons.visibility_off,
+                    color: _showAttendedWorkers ? Colors.green : Colors.grey,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _showAttendedWorkers = !_showAttendedWorkers;
+                    });
+                    // Yeni ayara göre puantaj listesini yeniden yükle
+                    _loadAttendanceForDate();
+                  },
+                  tooltip: _showAttendedWorkers ? 'Puantaj Girişi Yapılanları Gizle' : 'Puantaj Girişi Yapılanları Göster',
+                );
+              }
+              return const SizedBox.shrink();
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.bar_chart),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => MonthlyReportView(project: widget.project),
+                ),
+              );
+            },
+            tooltip: 'Aylık Rapor',
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -100,10 +212,35 @@ class _AttendanceViewState extends State<AttendanceView> {
             child: Column(
               children: [
                 Text(
-                  'Bugün için yoklama alın',
+                  'Yoklama Tarihi',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 8),
+                // Tarih seçici
+                InkWell(
+                  onTap: _selectDate,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.calendar_today),
+                        const SizedBox(width: 8),
+                        Text(
+                          _getFormattedDate(),
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(width: 8),
+                        const Icon(Icons.arrow_drop_down),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
                 Text(
                   'Mevcut İşçi Sayısı: ${_attendanceMap.entries.where((entry) => entry.value).length}/${_attendanceMap.length}',
                   style: const TextStyle(fontWeight: FontWeight.bold),
@@ -111,20 +248,28 @@ class _AttendanceViewState extends State<AttendanceView> {
               ],
             ),
           ),
-          // Date display
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: Row(
-              children: [
-                const Icon(Icons.calendar_today),
-                const SizedBox(width: 8),
-                Text(
-                  _getFormattedDate(),
-                  style: Theme.of(context).textTheme.titleSmall,
-                ),
-              ],
+          // Geçmiş tarih uyarısı
+          if (_selectedDate.isBefore(DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day)))
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade100,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline, color: Colors.orange),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Geçmiş tarih için yoklama görüntülüyorsunuz',
+                      style: TextStyle(color: Colors.orange.shade800),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
           const SizedBox(height: 16),
           Expanded(
             child: _isLoading
@@ -198,14 +343,40 @@ class _AttendanceViewState extends State<AttendanceView> {
       itemBuilder: (context, index) {
         final workerId = _assignedWorkerIds[index];
         final worker = _workersMap[workerId];
+        final attendanceDetails = _attendanceDetails[workerId];
         
         if (worker == null) {
-          return const SizedBox.shrink(); // Skip if worker not found
+          return const SizedBox.shrink();
+        }
+        
+        // Puantaj detaylarını göster (kim, ne zaman giriş yapmış)
+        String? subtitleText;
+        if (attendanceDetails != null) {
+          final createdByName = attendanceDetails['createdByName'];
+          final createdAt = attendanceDetails['createdAt'];
+          
+          if (createdByName != null) {
+            if (createdAt != null) {
+              // Timestamp'i DateTime'a çevir
+              if (createdAt is Timestamp) {
+                final dateTime = createdAt.toDate();
+                final formattedDate = '${dateTime.day}.${dateTime.month}.${dateTime.year} ${dateTime.hour}:${dateTime.minute.toString().padLeft(2, '0')}';
+                subtitleText = 'Kayıt: $createdByName, $formattedDate';
+              } else {
+                subtitleText = 'Kayıt: $createdByName';
+              }
+            } else {
+              subtitleText = 'Kayıt: $createdByName';
+            }
+          }
         }
 
         return SwitchListTile(
           title: Text('${worker.firstName} ${worker.lastName}'),
-          subtitle: null,
+          subtitle: subtitleText != null ? Text(
+            subtitleText,
+            style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
+          ) : null,
           secondary: CircleAvatar(
             backgroundColor: Colors.blue,
             backgroundImage: worker.photoUrl.isNotEmpty ? NetworkImage(worker.photoUrl) : null,
@@ -227,36 +398,73 @@ class _AttendanceViewState extends State<AttendanceView> {
   }
 
   String _getFormattedDate() {
-    final now = DateTime.now();
-    return '${now.day}/${now.month}/${now.year}';
+    final months = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
+                    'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
+    return '${_selectedDate.day} ${months[_selectedDate.month - 1]} ${_selectedDate.year}';
   }
 
   Future<void> _saveAttendance() async {
     final attendanceViewModel = Provider.of<AttendanceViewModel>(context, listen: false);
+    final userViewModel = Provider.of<UserViewModel>(context, listen: false);
+    final dateString = _getFormattedDateString(_selectedDate);
     
     try {
-      final existingRecords = await attendanceViewModel.markAttendance(
-        widget.project.id,
-        _attendanceMap,
-      );
+      // Mevcut kullanıcı bilgilerini al
+      final UserModel currentUser = userViewModel.currentUser!;
+      final bool isAdmin = userViewModel.isAdmin;
+      
+      // Seçilen tarihe göre doğru metodu çağır
+      final DateTime today = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
+      final DateTime selectedDay = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+      
+      Map<String, bool> existingRecords = {};
+      
+      // Admin kullanıcılar puantaj güncelleyebilir
+      if (isAdmin && _showAttendedWorkers) {
+        // Admin için her zaman güncelleme yap
+        existingRecords = await attendanceViewModel.markAttendanceForDate(
+          widget.project.id,
+          _attendanceMap,
+          dateString,
+          currentUser,
+          forceUpdate: true, // Mevcut kayıtları güncelle
+        );
+      } else {
+        // Normal kullanıcılar için standart akış
+        if (selectedDay.isAtSameMomentAs(today)) {
+          // Bugünün puantajı için
+          existingRecords = await attendanceViewModel.markAttendance(
+            widget.project.id,
+            _attendanceMap,
+            currentUser,
+          );
+        } else if (isAdmin) {
+          // Geçmiş tarihler için (sadece admin kullanıcılar)
+          existingRecords = await attendanceViewModel.markAttendanceForDate(
+            widget.project.id,
+            _attendanceMap,
+            dateString,
+            currentUser,
+          );
+        }
+      }
       
       if (!mounted) return;
       
-      if (existingRecords.isNotEmpty) {
-        // Show alert for existing records
+      if (existingRecords.isNotEmpty && !(_showAttendedWorkers && isAdmin)) {
+        // Admin değilse veya puantaj güncelleme modu açık değilse uyarı göster
         showDialog(
           context: context,
           builder: (context) => AlertDialog(
             title: const Text('Uyarı'),
             content: Text(
-              'Bazı işçiler için bugün zaten yoklama alınmış (${existingRecords.length} işçi).\n'
+              'Bazı işçiler için ${_getFormattedDate()} tarihinde zaten yoklama alınmış (${existingRecords.length} işçi).\n'
               'Bu işçilerin yoklamaları güncellenmedi.',
             ),
             actions: [
               TextButton(
                 onPressed: () {
                   Navigator.of(context).pop();
-                  Navigator.of(context).pop(); // Return to previous screen
                 },
                 child: const Text('Tamam'),
               ),
@@ -264,10 +472,11 @@ class _AttendanceViewState extends State<AttendanceView> {
           ),
         );
       } else {
-        Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Yoklama başarıyla kaydedildi')),
+          SnackBar(content: Text('${_getFormattedDate()} tarihi için yoklama kaydedildi')),
         );
+        // Puantaj listesini yeniden yükle
+        _loadAttendanceForDate();
       }
     } catch (e) {
       if (!mounted) return;

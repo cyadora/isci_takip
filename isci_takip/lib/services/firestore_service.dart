@@ -233,12 +233,13 @@ class FirestoreService {
     return snapshot.docs.isNotEmpty;
   }
   
-  // Create attendance record
+  // Create attendance record with user information
   Future<DocumentReference> createAttendanceRecord(
     String projectId,
     String workerId,
     String date,
     bool present,
+    {String? createdByUid, String? createdByName}
   ) {
     return attendanceCollection.add({
       'projectId': projectId,
@@ -246,19 +247,26 @@ class FirestoreService {
       'date': date,
       'present': present,
       'timestamp': FieldValue.serverTimestamp(),
+      'createdByUid': createdByUid,
+      'createdByName': createdByName,
+      'createdAt': FieldValue.serverTimestamp(),
     });
   }
   
   // Get attendance records for a project on a specific date
-  Future<Map<String, bool>> getAttendanceRecords(String projectId, String date) async {
+  Future<Map<String, dynamic>> getAttendanceRecords(String projectId, String date) async {
     final snapshot = await attendanceCollection
         .where('projectId', isEqualTo: projectId)
         .where('date', isEqualTo: date)
         .get();
     
-    final Map<String, bool> records = {};
+    final Map<String, dynamic> records = {};
     for (var doc in snapshot.docs) {
-      records[doc.get('workerId') as String] = doc.get('present') as bool;
+      records[doc.get('workerId') as String] = {
+        'present': doc.get('present') as bool,
+        'createdByName': doc.get('createdByName'),
+        'createdAt': doc.get('createdAt'),
+      };
     }
     
     return records;
@@ -278,6 +286,43 @@ class FirestoreService {
     }
     
     return snapshot.docs.first.get('present') as bool;
+  }
+  
+  // Detaylı yoklama bilgilerini döndüren metod
+  Future<Map<String, dynamic>?> getWorkerAttendanceDetailsForDate(String projectId, String workerId, String date) async {
+    final snapshot = await attendanceCollection
+        .where('projectId', isEqualTo: projectId)
+        .where('workerId', isEqualTo: workerId)
+        .where('date', isEqualTo: date)
+        .limit(1)
+        .get();
+    
+    if (snapshot.docs.isEmpty) {
+      return null; // Kayıt yoksa null döndür
+    }
+    
+    final doc = snapshot.docs.first;
+    final Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+    
+    // Temel yoklama bilgilerini içeren harita oluştur
+    final Map<String, dynamic> attendanceDetails = {
+      'present': data['present'] as bool? ?? false,
+    };
+    
+    // Kullanıcı bilgilerini ekle (varsa)
+    if (data.containsKey('createdByUid')) {
+      attendanceDetails['createdByUid'] = data['createdByUid'];
+    }
+    
+    if (data.containsKey('createdByName')) {
+      attendanceDetails['createdByName'] = data['createdByName'];
+    }
+    
+    if (data.containsKey('createdAt')) {
+      attendanceDetails['createdAt'] = data['createdAt'];
+    }
+    
+    return attendanceDetails;
   }
   
   // Get attendance history for a worker

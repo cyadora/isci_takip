@@ -118,6 +118,29 @@ class WorkerDetailsView extends StatelessWidget {
                 ),
               ),
             ),
+
+            Card(
+              margin: const EdgeInsets.only(bottom: 16),
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Görev Bilgisi',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    _buildDetailItem(
+                      context,
+                      icon: Icons.work,
+                      title: 'Pozisyon',
+                      value: worker.position.isNotEmpty ? worker.position : 'Belirtilmemiş',
+                    ),
+                  ],
+                ),
+              ),
+            ),
             
             // Worker contact details
             Card(
@@ -284,9 +307,29 @@ class _WorkerFormDialogState extends State<WorkerFormDialog> {
   final _phoneController = TextEditingController();
   final _addressController = TextEditingController();
   final _photoUrlController = TextEditingController();
+  final _positionController = TextEditingController(); // YENİ
   bool _safetyDocsComplete = false;
   bool _entryDocsComplete = false;
 
+  final List<String> _positions = [
+    'Usta',
+    'Kalfa',
+    'İşçi',
+    'Operatör',
+    'Demirci',
+    'Duvarcı',
+    'Boyacı',
+    'Elektrikçi',
+    'Tesisatçı',
+    'Marangoz',
+    'Asfaltçı',
+    'Hafriyatçı',
+    'Vinç Operatörü',
+    'Forklift Operatörü',
+    'Şoför',
+    'Bekçi',
+    'Diğer'
+  ];
   @override
   void initState() {
     super.initState();
@@ -297,6 +340,7 @@ class _WorkerFormDialogState extends State<WorkerFormDialog> {
     _photoUrlController.text = widget.worker.photoUrl;
     _safetyDocsComplete = widget.worker.safetyDocsComplete;
     _entryDocsComplete = widget.worker.entryDocsComplete;
+    _positionController.text = widget.worker.position; // YENİ
   }
 
   @override
@@ -306,6 +350,7 @@ class _WorkerFormDialogState extends State<WorkerFormDialog> {
     _phoneController.dispose();
     _addressController.dispose();
     _photoUrlController.dispose();
+    _positionController.dispose(); // YENİ
     super.dispose();
   }
 
@@ -342,6 +387,34 @@ class _WorkerFormDialogState extends State<WorkerFormDialog> {
                 validator: (value) {
                   if (value == null || value.isEmpty) {
                     return 'Soyad alanı zorunludur';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              // Pozisyon dropdown - YENİ
+              DropdownButtonFormField<String>(
+                value: _positions.contains(_positionController.text) 
+                    ? _positionController.text 
+                    : null,
+                decoration: const InputDecoration(
+                  labelText: 'Görev/Pozisyon *',
+                  border: OutlineInputBorder(),
+                ),
+                items: _positions.map((String position) {
+                  return DropdownMenuItem<String>(
+                    value: position,
+                    child: Text(position),
+                  );
+                }).toList(),
+                onChanged: (String? newValue) {
+                  if (newValue != null) {
+                    _positionController.text = newValue;
+                  }
+                },
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Görev seçimi zorunludur';
                   }
                   return null;
                 },
@@ -438,6 +511,7 @@ class _WorkerFormDialogState extends State<WorkerFormDialog> {
       phone: _phoneController.text,
       address: _addressController.text,
       photoUrl: _photoUrlController.text,
+      position: _positionController.text, // YENİ
       safetyDocsComplete: _safetyDocsComplete,
       entryDocsComplete: _entryDocsComplete,
     );
