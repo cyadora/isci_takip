@@ -128,63 +128,88 @@ class WorkerListItem extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: worker.safetyDocsComplete ? Colors.green : Colors.grey,
-          child: Text(
-            worker.firstName.isNotEmpty ? worker.firstName[0].toUpperCase() : '?',
-            style: const TextStyle(color: Colors.white),
-          ),
+      elevation: 3.0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: worker.safetyDocsComplete ? Colors.green.shade300 : Colors.red.shade200,
+          width: 1.0,
         ),
-        title: Text('${worker.firstName} ${worker.lastName}'),
-        subtitle: Text('${worker.position.isNotEmpty ? worker.position : "Pozisyon belirtilmemiş"} - ${worker.address}'),
-        trailing: Consumer<UserViewModel>(builder: (context, userViewModel, child) {
-          return Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Edit button - only for admin users
-              if (userViewModel.isAdmin)
-                IconButton(
-                  icon: const Icon(Icons.edit, color: Colors.blue),
-                  onPressed: () {
-                    showDialog(
-                      context: context,
-                      builder: (context) => AddEditWorkerDialog(worker: worker),
-                    );
-                  },
-                  tooltip: 'Düzenle',
-                ),
-              // Toggle status button - only for admin users
-              if (userViewModel.isAdmin)
-                IconButton(
-                  icon: Icon(
-                    worker.safetyDocsComplete ? Icons.person_off : Icons.person,
-                    color: worker.safetyDocsComplete ? Colors.red : Colors.green,
-                  ),
-                  onPressed: () => _toggleWorkerStatus(context, worker),
-                  tooltip: worker.safetyDocsComplete ? 'Pasif Yap' : 'Aktif Yap',
-                ),
-              // Details button - for all users
-              IconButton(
-                icon: const Icon(Icons.info_outline),
-                onPressed: () {
-                  showDialog(
-                    context: context,
-                    builder: (context) => WorkerDetailsDialog(worker: worker),
-                  );
-                },
-                tooltip: 'Detaylar',
-              ),
-            ],
-          );
-        }),
+      ),
+      child: InkWell(
         onTap: () {
-          // İşçi detay diyaloğunu göster
+          // Karta tıklandığında işçi detay dialogunu göster
           showDialog(
             context: context,
             builder: (context) => WorkerDetailsDialog(worker: worker),
           );
         },
+        borderRadius: BorderRadius.circular(12),
+        child: ListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          leading: CircleAvatar(
+            backgroundColor: worker.safetyDocsComplete ? Colors.green : Colors.grey,
+            radius: 24, // Biraz daha büyük avatar
+            child: Text(
+              worker.firstName.isNotEmpty ? worker.firstName[0].toUpperCase() : '?',
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+            ),
+          ),
+          title: Text(
+            '${worker.firstName} ${worker.lastName}',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+              color: worker.safetyDocsComplete ? Colors.black87 : Colors.red.shade700,
+            ),
+          ),
+          subtitle: Text(
+            '${worker.position.isNotEmpty ? worker.position : "Pozisyon belirtilmemiş"} - ${worker.address}',
+            style: const TextStyle(fontSize: 14),
+          ),
+          trailing: Consumer<UserViewModel>(
+            builder: (context, userViewModel, child) {
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Edit button - only for admin users
+                  if (userViewModel.isAdmin)
+                    IconButton(
+                      icon: const Icon(Icons.edit, color: Colors.blue),
+                      onPressed: () {
+                        showDialog(
+                          context: context,
+                          builder: (context) => AddEditWorkerDialog(worker: worker),
+                        );
+                      },
+                      tooltip: 'Düzenle',
+                    ),
+                  // Toggle status button - only for admin users
+                  if (userViewModel.isAdmin)
+                    IconButton(
+                      icon: Icon(
+                        worker.safetyDocsComplete ? Icons.person_off : Icons.person,
+                        color: worker.safetyDocsComplete ? Colors.red : Colors.green,
+                      ),
+                      onPressed: () => _toggleWorkerStatus(context, worker),
+                      tooltip: worker.safetyDocsComplete ? 'Pasif Yap' : 'Aktif Yap',
+                    ),
+                  // Details button - for all users
+                  IconButton(
+                    icon: const Icon(Icons.info_outline),
+                    onPressed: () {
+                      showDialog(
+                        context: context,
+                        builder: (context) => WorkerDetailsDialog(worker: worker),
+                      );
+                    },
+                    tooltip: 'Detaylar',
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
       ),
     );
   }
@@ -597,18 +622,103 @@ class WorkerDetailsDialog extends StatelessWidget {
 
   const WorkerDetailsDialog({Key? key, required this.worker}) : super(key: key);
 
-  Widget _buildDetailRow(String label, String value) {
+  // Geliştirimiş bilgi satırı - ikonlar ve renkli göstergelerle
+  Widget _buildDetailRow(String label, String value, {IconData? icon, Color? valueColor}) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            '$label: ',
-            style: const TextStyle(fontWeight: FontWeight.bold),
+          if (icon != null) 
+            Padding(
+              padding: const EdgeInsets.only(right: 8.0),
+              child: Icon(icon, size: 20, color: Colors.blue[700]),
+            ),
+          Expanded(
+            flex: 2,
+            child: Text(
+              '$label:',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
           ),
           Expanded(
-            child: Text(value),
+            flex: 3,
+            child: Text(
+              value,
+              style: TextStyle(
+                color: valueColor,
+                fontWeight: valueColor != null ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  // Durum göstergesi widget'ı
+  Widget _buildStatusIndicator(bool isActive) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: isActive ? Colors.green[100] : Colors.red[100],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isActive ? Colors.green : Colors.red,
+          width: 1,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            isActive ? Icons.check_circle : Icons.cancel,
+            color: isActive ? Colors.green[700] : Colors.red[700],
+            size: 16,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            isActive ? 'Aktif' : 'Pasif',
+            style: TextStyle(
+              color: isActive ? Colors.green[700] : Colors.red[700],
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  // Belge durumu göstergesi
+  Widget _buildDocumentStatusChip(String label, bool isComplete) {
+    return Container(
+      margin: const EdgeInsets.only(right: 8, bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: isComplete ? Colors.green[50] : Colors.orange[50],
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isComplete ? Colors.green[200]! : Colors.orange[200]!,
+          width: 1,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            isComplete ? Icons.task_alt : Icons.pending_actions,
+            size: 14,
+            color: isComplete ? Colors.green[700] : Colors.orange[700],
+          ),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: isComplete ? Colors.green[700] : Colors.orange[700],
+            ),
           ),
         ],
       ),
@@ -617,94 +727,224 @@ class WorkerDetailsDialog extends StatelessWidget {
   
   // Platform uyumlu işçi fotoğrafı görüntüleme metodu
   Widget _buildWorkerImage(String photoUrl) {
-    // Web platformu için veya http/https ile başlayan URL'ler için
-    if (photoUrl.startsWith('http')) {
-      return Image.network(
-        photoUrl,
-        width: 100,
-        height: 100,
+    return Container(
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.blue[200]!, width: 3),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 8,
+            spreadRadius: 2,
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(75),
+        child: photoUrl.startsWith('http') 
+            ? Image.network(
+                photoUrl,
+                width: 150,
+                height: 150,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) {
+                  return _buildPlaceholderImage();
+                },
+              )
+            : _buildFileImage(photoUrl),
+      ),
+    );
+  }
+  
+  // Dosya yolundan resim yükleme
+  Widget _buildFileImage(String photoUrl) {
+    try {
+      return Image.file(
+        File(photoUrl),
+        width: 150,
+        height: 150,
         fit: BoxFit.cover,
         errorBuilder: (context, error, stackTrace) {
           return _buildPlaceholderImage();
         },
       );
-    } 
-    // Mobil platformlar için dosya yolu
-    else {
-      try {
-        return Image.file(
-          File(photoUrl),
-          width: 100,
-          height: 100,
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) {
-            return _buildPlaceholderImage();
-          },
-        );
-      } catch (e) {
-        // Herhangi bir hata durumunda placeholder göster
-        return _buildPlaceholderImage();
-      }
+    } catch (e) {
+      return _buildPlaceholderImage();
     }
   }
   
   // Placeholder resim widget'ı
   Widget _buildPlaceholderImage() {
     return Container(
-      width: 100,
-      height: 100,
-      color: Colors.grey[300],
-      child: const Icon(Icons.person, size: 50),
+      width: 150,
+      height: 150,
+      color: Colors.grey[200],
+      child: Icon(Icons.person, size: 80, color: Colors.grey[400]),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text('${worker.firstName} ${worker.lastName}'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (worker.photoUrl.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 16.0),
-                child: Center(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(50),
-                    child: _buildWorkerImage(worker.photoUrl),
+    final isAdmin = Provider.of<UserViewModel>(context, listen: false).isAdmin;
+    
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: 8,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 500),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Header with name and status
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${worker.firstName} ${worker.lastName}',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue[800],
+                      ),
+                    ),
+                  ),
+                  _buildStatusIndicator(worker.safetyDocsComplete),
+                ],
+              ),
+              const Divider(height: 24, thickness: 1),
+              
+              // Content area with photo and details
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Photo section
+                      if (worker.photoUrl.isNotEmpty)
+                        Center(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 16.0),
+                            child: _buildWorkerImage(worker.photoUrl),
+                          ),
+                        ),
+                      
+                      const SizedBox(height: 8),
+                      
+                      // Contact information section
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[50],
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey[200]!),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 8.0),
+                              child: Text(
+                                'İletişim Bilgileri',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold, 
+                                  fontSize: 16,
+                                  color: Colors.blue[700],
+                                ),
+                              ),
+                            ),
+                            _buildDetailRow('Telefon', worker.phone, icon: Icons.phone),
+                            _buildDetailRow('Adres', worker.address, icon: Icons.home),
+                          ],
+                        ),
+                      ),
+                      
+                      const SizedBox(height: 16),
+                      
+                      // Documents section
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[50],
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey[200]!),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 12.0),
+                              child: Text(
+                                'Belge Durumu',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold, 
+                                  fontSize: 16,
+                                  color: Colors.blue[700],
+                                ),
+                              ),
+                            ),
+                            Wrap(
+                              children: [
+                                _buildDocumentStatusChip(
+                                  'Güvenlik Belgeleri',
+                                  worker.safetyDocsComplete,
+                                ),
+                                _buildDocumentStatusChip(
+                                  'Giriş Belgeleri',
+                                  worker.entryDocsComplete,
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-            _buildDetailRow('Durum', worker.safetyDocsComplete ? 'Aktif' : 'Pasif'),
-            _buildDetailRow('Telefon', worker.phone),
-            _buildDetailRow('Adres', worker.address),
-            _buildDetailRow('Güvenlik Belgeleri', worker.safetyDocsComplete ? 'Tamamlandı' : 'Tamamlanmadı'),
-            _buildDetailRow('Giriş Belgeleri', worker.entryDocsComplete ? 'Tamamlandı' : 'Tamamlanmadı'),
-          ],
+              
+              const SizedBox(height: 16),
+              
+              // Action buttons
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.close),
+                    label: const Text('Kapat'),
+                    onPressed: () => Navigator.of(context).pop(),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    ),
+                  ),
+                  if (isAdmin)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8.0),
+                      child: ElevatedButton.icon(
+                        icon: const Icon(Icons.edit),
+                        label: const Text('Düzenle'),
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          showDialog(
+                            context: context,
+                            builder: (context) => AddEditWorkerDialog(worker: worker),
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue,
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () {
-            Navigator.of(context).pop();
-          },
-          child: const Text('Kapat'),
-        ),
-        // Edit button - only for admin users
-        if (Provider.of<UserViewModel>(context, listen: false).isAdmin)
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              showDialog(
-                context: context,
-                builder: (context) => AddEditWorkerDialog(worker: worker),
-              );
-            },
-            child: const Text('Düzenle'),
-          ),
-      ],
     );
   }
 }

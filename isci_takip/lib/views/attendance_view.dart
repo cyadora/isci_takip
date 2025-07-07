@@ -97,6 +97,7 @@ class _AttendanceViewState extends State<AttendanceView> {
     _attendanceMap.clear();
     _attendanceDetails.clear();
     
+    // Tüm işçiler için işlem yap
     for (final workerId in _assignedWorkerIds) {
       bool hasAttendanceRecord = existingAttendance.containsKey(workerId);
       bool isPresent = false;
@@ -114,15 +115,19 @@ class _AttendanceViewState extends State<AttendanceView> {
           // Eski format: doğrudan boolean değer
           isPresent = existingAttendance[workerId] as bool? ?? false;
         }
-        
-        // Admin değilse ve puantaj gösterme kapalıysa, kayıt varsa gösterme
-        if (!isAdmin && !_showAttendedWorkers && hasAttendanceRecord) {
-          continue; // Bu işçiyi listeden atla
-        }
       }
       
-      // Kayıt yoksa veya gösterilecekse haritaya ekle
-      _attendanceMap[workerId] = isPresent;
+      // Puantaj giriş filtre kontrolü
+      bool shouldShow = true;
+      // Eğer seçilen seçenek "Puantajı yapılmış olanları gösterme" ise, kayıtı olan işçileri gizle
+      if (hasAttendanceRecord && !_showAttendedWorkers) {
+        shouldShow = false;
+      }
+      
+      // Gösterilecekse haritaya ekle
+      if (shouldShow) {
+        _attendanceMap[workerId] = isPresent;
+      }
     }
     
     setState(() {});
@@ -178,12 +183,20 @@ class _AttendanceViewState extends State<AttendanceView> {
                     _showAttendedWorkers ? Icons.visibility : Icons.visibility_off,
                     color: _showAttendedWorkers ? Colors.green : Colors.grey,
                   ),
-                  onPressed: () {
+                  onPressed: () async {
                     setState(() {
                       _showAttendedWorkers = !_showAttendedWorkers;
                     });
                     // Yeni ayara göre puantaj listesini yeniden yükle
-                    _loadAttendanceForDate();
+                    await _loadAttendanceForDate();
+                    // Kullanıcıya bilgi ver
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(_showAttendedWorkers 
+                          ? 'Puantaj girişi yapılan işçiler gösteriliyor' 
+                          : 'Puantaj girişi yapılan işçiler gizlendi')),
+                      );
+                    }
                   },
                   tooltip: _showAttendedWorkers ? 'Puantaj Girişi Yapılanları Gizle' : 'Puantaj Girişi Yapılanları Göster',
                 );
@@ -419,15 +432,15 @@ class _AttendanceViewState extends State<AttendanceView> {
       
       Map<String, bool> existingRecords = {};
       
-      // Admin kullanıcılar puantaj güncelleyebilir
-      if (isAdmin && _showAttendedWorkers) {
-        // Admin için her zaman güncelleme yap
+      // Admin kullanıcılar için göre özel mantık
+      if (isAdmin) {
+        // Admin kullanıcılar her zaman tüm puantaj kayıtlarını güncelleyebilir
         existingRecords = await attendanceViewModel.markAttendanceForDate(
           widget.project.id,
           _attendanceMap,
           dateString,
           currentUser,
-          forceUpdate: true, // Mevcut kayıtları güncelle
+          forceUpdate: true, // Admin için her zaman güncellemeyi zorla
         );
       } else {
         // Normal kullanıcılar için standart akış
@@ -438,14 +451,12 @@ class _AttendanceViewState extends State<AttendanceView> {
             _attendanceMap,
             currentUser,
           );
-        } else if (isAdmin) {
-          // Geçmiş tarihler için (sadece admin kullanıcılar)
-          existingRecords = await attendanceViewModel.markAttendanceForDate(
-            widget.project.id,
-            _attendanceMap,
-            dateString,
-            currentUser,
+        } else {
+          // Normal kullanıcılar geçmiş tarihleri düzenleyemez
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Geçmiş tarihlere ait puantajları sadece yöneticiler düzenleyebilir')),
           );
+          return;
         }
       }
       

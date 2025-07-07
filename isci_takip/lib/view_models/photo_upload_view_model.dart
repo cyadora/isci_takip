@@ -22,7 +22,7 @@ class PhotoUploadViewModel extends ChangeNotifier {
     try {
       isLoading = true;
       errorMessage = null;
-      notifyListeners();
+      Future.microtask(() => notifyListeners());
       
       // Kullanıcı ID'sini al
       final uploaderId = _auth.currentUser?.uid;
@@ -32,7 +32,8 @@ class PhotoUploadViewModel extends ChangeNotifier {
       
       // Dosya adını oluştur (benzersiz olması için timestamp ekle)
       final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final fileName = '${timestamp}_${path.basename(imageFile.path)}';
+      final String fileExtension = path.extension(imageFile.path);
+      final String fileName = 'photo_${timestamp}$fileExtension';
       
       // Firebase Storage'a yükle
       final storageRef = _storage.ref().child('site_photos/$projectId/$fileName');
@@ -42,7 +43,7 @@ class PhotoUploadViewModel extends ChangeNotifier {
       final snapshot = await uploadTask;
       
       // Yüklenen dosyanın URL'sini al
-      final photoUrl = await snapshot.ref.getDownloadURL();
+      final String downloadUrl = await snapshot.ref.getDownloadURL();
       
       // Firestore'a kaydet
       final sitePhoto = SitePhotoModel(
@@ -50,19 +51,23 @@ class PhotoUploadViewModel extends ChangeNotifier {
         projectId: projectId,
         uploaderId: uploaderId,
         timestamp: DateTime.now(),
-        photoUrl: photoUrl,
+        photoUrl: downloadUrl,
         fileName: fileName,
       );
       
       await _firestoreService.createSitePhoto(sitePhoto);
       
+      // Fotoğraf listesini yenile
+      await getPhotos(projectId);
+      
       isLoading = false;
-      notifyListeners();
+      Future.microtask(() => notifyListeners());
       return true;
     } catch (e) {
       isLoading = false;
       errorMessage = 'Fotoğraf yüklenirken bir hata oluştu: ${e.toString()}';
-      notifyListeners();
+      // UI güncellemesini mikro görev sırasına koy
+      Future.microtask(() => notifyListeners());
       return false;
     }
   }
@@ -72,14 +77,16 @@ class PhotoUploadViewModel extends ChangeNotifier {
     try {
       isLoading = true;
       errorMessage = null;
-      notifyListeners();
+      // UI güncellemesini mikro görev sırasına koy
+      Future.microtask(() => notifyListeners());
 
       // Kullanıcı kimliğini al
       final currentUser = FirebaseAuth.instance.currentUser;
       if (currentUser == null) {
         errorMessage = 'Oturum açık değil';
         isLoading = false;
-        notifyListeners();
+        // UI güncellemesini mikro görev sırasına koy
+        Future.microtask(() => notifyListeners());
         return false;
       }
 
@@ -124,33 +131,46 @@ class PhotoUploadViewModel extends ChangeNotifier {
 
       await _firestoreService.createSitePhoto(photo);
 
-      isLoading = false;
-      notifyListeners();
-      return true;
-    } catch (e) {
-      errorMessage = 'Fotoğraf yüklenirken hata oluştu: $e';
-      isLoading = false;
-      notifyListeners();
-      return false;
-    }
+    // Fotoğraf listesini güncelle
+    await getPhotos(projectId);
+
+    isLoading = false;
+    // UI güncellemesini mikro görev sırasına koy
+    Future.microtask(() => notifyListeners());
+    return true;
+  } catch (e) {
+    errorMessage = 'Fotoğraf yüklenirken hata oluştu: $e';
+    isLoading = false;
+    // UI güncellemesini mikro görev sırasına koy
+    Future.microtask(() => notifyListeners());
+    return false;
+  }
   }
   
   // Belirli bir projeye ait tüm fotoğrafları getir
   Future<List<SitePhotoModel>> getPhotos(String projectId) async {
     try {
-      isLoading = true;
-      errorMessage = null;
-      notifyListeners();
+      // Loading state değişikliklerini sadece hazırsa bildir
+      if (!isLoading) {
+        isLoading = true;
+        errorMessage = null;
+        // UI güncellemesini mikro görev sırasına koy
+        Future.microtask(() => notifyListeners());
+      }
       
+      // Fotoğrafları yükle
       photos = await _firestoreService.getSitePhotos(projectId);
       
+      // Eğer mounted durumundaysa (context hala geçerliyse) bildir
       isLoading = false;
-      notifyListeners();
+      // notifyListeners çağrısını Future mikro-görev sırasına koyarak build çakışmasını önle
+      Future.microtask(() => notifyListeners());
       return photos;
     } catch (e) {
       isLoading = false;
       errorMessage = 'Fotoğraflar yüklenirken bir hata oluştu: ${e.toString()}';
-      notifyListeners();
+      // notifyListeners çağrısını Future mikro-görev sırasına koy
+      Future.microtask(() => notifyListeners());
       return [];
     }
   }
@@ -158,6 +178,7 @@ class PhotoUploadViewModel extends ChangeNotifier {
   // Hata mesajını temizle
   void clearError() {
     errorMessage = null;
-    notifyListeners();
+    // UI güncellemesini mikro görev sırasına koy
+    Future.microtask(() => notifyListeners());
   }
 }

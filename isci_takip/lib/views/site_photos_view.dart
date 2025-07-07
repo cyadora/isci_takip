@@ -165,10 +165,12 @@ class _SitePhotosViewState extends State<SitePhotosView> {
 
   @override
   Widget build(BuildContext context) {
-    final viewModel = Provider.of<PhotoUploadViewModel>(context);
-    final photos = viewModel.photos;
-
-    return Scaffold(
+    // Consumer ile widget ağacının dışında değişiklikleri dinleme
+    return Consumer<PhotoUploadViewModel>(
+      builder: (context, viewModel, child) {
+        final photos = viewModel.photos;
+        
+        return Scaffold(
       appBar: AppBar(
         title: Text('${widget.project.name} - Saha Fotoğrafları'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
@@ -296,6 +298,8 @@ class _SitePhotosViewState extends State<SitePhotosView> {
         tooltip: 'Fotoğraf Yükle',
         child: const Icon(Icons.add_a_photo),
       ),
+    );
+      },
     );
   }
 }
