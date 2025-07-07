@@ -16,9 +16,10 @@ workflows:
           echo "Setting up code signing"
           # Bu kısım gerçek sertifikalarla yapılandırılmalıdır
           
-      - name: Flutter packages get
+      - name: Flutter clean and get packages
         script: |
-          flutter packages pub get
+          flutter clean
+          flutter pub get
           
       - name: Pod install
         script: |
@@ -31,12 +32,19 @@ workflows:
           echo "EXCLUDED_ARCHS[sdk=iphonesimulator*] = arm64" >> ios/Flutter/AppConfig.xcconfig
           echo "OTHER_CFLAGS = \$(inherited)" >> ios/Flutter/AppConfig.xcconfig
           
-      - name: Flutter build iOS
+      - name: Flutter build iOS (Device)
         script: |
           flutter build ios --release --no-codesign
           
+      - name: Flutter build iOS Simulator
+        script: |
+          flutter build ios --simulator --no-codesign
+          cd build/ios/iphonesimulator
+          zip -r Runner_Simulator.zip Runner.app
+          
     artifacts:
       - build/ios/iphoneos/Runner.app
+      - build/ios/iphonesimulator/Runner_Simulator.zip
       
   android-workflow:
     name: Android Build
