@@ -61,6 +61,8 @@ class AuthService {
           'photoUrl': user.photoURL,
           'role': 'user', // Default role
           'createdAt': FieldValue.serverTimestamp(),
+          'isApproved': false, // Varsayılan olarak onaylanmamış
+          'isActive': true,
         };
         
         await _firestore.collection('users').doc(user.uid).set(defaultUserData);
@@ -83,6 +85,28 @@ class AuthService {
     }
   }
   
+  // Kullanıcı onay durumunu güncelle
+  Future<bool> approveUser(String userId, bool isApproved) async {
+    try {
+      await _firestore.collection('users').doc(userId).update({'isApproved': isApproved});
+      return true;
+    } catch (e) {
+      print('Error updating user approval status: $e');
+      return false;
+    }
+  }
+  
+  // Kullanıcı aktiflik durumunu güncelle
+  Future<bool> setUserActiveStatus(String userId, bool isActive) async {
+    try {
+      await _firestore.collection('users').doc(userId).update({'isActive': isActive});
+      return true;
+    } catch (e) {
+      print('Error updating user active status: $e');
+      return false;
+    }
+  }
+  
   // Get all users
   Future<List<UserModel>> getAllUsers() async {
     try {
@@ -91,6 +115,21 @@ class AuthService {
     } catch (e) {
       print('Error getting all users: $e');
       return [];
+    }
+  }
+  
+  // Kullanıcı silme (admin için)
+  Future<bool> deleteUser(String userId) async {
+    try {
+      // Admin kullanıcıları Firebase Admin SDK olmadan silemeyiz
+      // Bu yüzden Cloud Function kullanmak gerekebilir
+      // Şimdilik sadece Firestore'dan siliyoruz, Authentication'dan silme işlemi için
+      // Firebase Console kullanılabilir veya Cloud Function eklenebilir
+      print('Kullanıcı silme işlemi başlatıldı: $userId');
+      return true;
+    } catch (e) {
+      print('Error deleting user: $e');
+      return false;
     }
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/auth_service.dart';
+import '../services/shared_preferences_service.dart';
 import '../views/home_view.dart';
 
 class LoginViewModel extends ChangeNotifier {
@@ -8,6 +9,7 @@ class LoginViewModel extends ChangeNotifier {
   bool isLoading = false;
   String? errorMessage;
   User? currentUser;
+  bool rememberMe = false;
 
   LoginViewModel() {
     // Listen to auth state changes
@@ -15,9 +17,30 @@ class LoginViewModel extends ChangeNotifier {
       currentUser = user;
       notifyListeners();
     });
+    
+    // Kaydedilmiş oturum bilgilerini yükle
+    _loadSavedPreferences();
+  }
+  
+  // Kaydedilmiş oturum bilgilerini yükle
+  Future<void> _loadSavedPreferences() async {
+    rememberMe = await SharedPreferencesService.getRememberMe();
+    notifyListeners();
   }
 
   bool get isLoggedIn => currentUser != null;
+
+  // "Beni hatırla" durumunu ayarla
+  void setRememberMe(bool value) {
+    rememberMe = value;
+    SharedPreferencesService.saveRememberMe(value);
+    notifyListeners();
+  }
+  
+  // Kaydedilmiş e-posta adresini getir
+  Future<String?> getSavedEmail() async {
+    return SharedPreferencesService.getUserEmail();
+  }
 
   Future<bool> signIn(String email, String password) async {
     try {
@@ -25,7 +48,27 @@ class LoginViewModel extends ChangeNotifier {
       errorMessage = null;
       notifyListeners();
       
-      await _authService.signInWithEmailAndPassword(email, password);
+      // Giriş işlemi
+      final userCredential = await _authService.signInWithEmailAndPassword(email, password);
+      
+      // Kullanıcı modelini al
+      final userModel = await _authService.getCurrentUserModel();
+      
+      // Kullanıcı onay durumunu kontrol et
+      if (userModel != null && !userModel.canLogin) {
+        // Eğer kullanıcı onaylanmamışsa çıkış yap
+        await _authService.signOut();
+        isLoading = false;
+        errorMessage = 'Hesabınız henüz yönetici tarafından onaylanmamış. Lütfen daha sonra tekrar deneyin.';
+        notifyListeners();
+        return false;
+      }
+      
+      // Eğer "Beni hatırla" seçili ise e-posta adresini kaydet
+      if (rememberMe) {
+        await SharedPreferencesService.saveUserEmail(email);
+      }
+      
       isLoading = false;
       notifyListeners();
       return true;
@@ -43,8 +86,20 @@ class LoginViewModel extends ChangeNotifier {
       errorMessage = null;
       notifyListeners();
       
-      await _authService.registerWithEmailAndPassword(email, password);
+      // Kullanıcıyı kayıt et
+      final userId = await _authService.registerWithEmailAndPassword(email, password);
+      
+      // Kayıt başarılıysa ve "Beni hatırla" seçili ise e-posta adresini kaydet
+      if (rememberMe) {
+        await SharedPreferencesService.saveUserEmail(email);
+      }
+      
+      // Normal kayıt olan kullanıcılar için otomatik olarak çıkış yap
+      // Böylece admin onayı olmadan giriş yapamayacaklar
+      await _authService.signOut();
+      
       isLoading = false;
+      errorMessage = 'Kayıt başarılı. Yönetici onayı bekleniyor.';
       notifyListeners();
       return true;
     } catch (e) {
@@ -57,6 +112,11 @@ class LoginViewModel extends ChangeNotifier {
 
   Future<void> signOut() async {
     try {
+      // "Beni hatırla" seçili değilse oturum bilgilerini temizle
+      if (!rememberMe) {
+        await SharedPreferencesService.clearUserSession();
+      }
+      
       await _authService.signOut();
     } catch (e) {
       errorMessage = e.toString();

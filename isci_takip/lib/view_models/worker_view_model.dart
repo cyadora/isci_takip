@@ -1,9 +1,10 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../models/worker_model.dart';
-import '../services/firestore_service.dart';
+import '../services/worker_service.dart';
 
 class WorkerViewModel extends ChangeNotifier {
-  final FirestoreService _firestoreService = FirestoreService();
+  final WorkerService _workerService = WorkerService();
   
   List<WorkerModel> _workers = [];
   List<WorkerModel> _activeWorkers = [];
@@ -23,14 +24,15 @@ class WorkerViewModel extends ChangeNotifier {
   // Initialize streams
   void init() {
     _listenToWorkers();
-    _listenToActiveWorkers();
   }
   
   // Listen to all workers
   void _listenToWorkers() {
-    _firestoreService.getWorkers().listen(
+    _workerService.getWorkers().listen(
       (workersList) {
         _workers = workersList;
+        // Aktif işçileri filtrele
+        _activeWorkers = workersList.where((worker) => worker.isActive).toList();
         notifyListeners();
       },
       onError: (error) {
@@ -40,122 +42,82 @@ class WorkerViewModel extends ChangeNotifier {
     );
   }
   
-  // Listen to active workers
-  void _listenToActiveWorkers() {
-    _firestoreService.getActiveWorkers().listen(
-      (activeWorkersList) {
-        _activeWorkers = activeWorkersList;
-        notifyListeners();
-      },
-      onError: (error) {
-        _errorMessage = error.toString();
-        notifyListeners();
-      },
-    );
-  }
-  
-  // Add a worker
-  Future<dynamic> addWorker(WorkerModel worker) async {
+  // İşçi ekle
+  Future<bool> addWorker(WorkerModel worker, {File? photoFile}) async {
     try {
-      _isLoading = true;
-      _errorMessage = null;
-      notifyListeners();
+      _setLoading(true);
       
-      // This now returns the DocumentReference
-      final docRef = await _firestoreService.addWorker(worker);
+      final workerId = await _workerService.addWorker(worker, photoFile: photoFile);
       
-      _isLoading = false;
-      notifyListeners();
-      return docRef.id; // Return the worker ID
+      _setLoading(false);
+      return workerId != null;
     } catch (e) {
-      _isLoading = false;
-      _errorMessage = e.toString();
-      notifyListeners();
+      _setError('\u0130şçi eklenirken hata oluştu: $e');
       return false;
     }
   }
   
-  // Update a worker
-  Future<bool> updateWorker(WorkerModel worker) async {
+  // İşçi güncelle
+  Future<bool> updateWorker(String workerId, Map<String, dynamic> data, {File? photoFile}) async {
     try {
-      _isLoading = true;
-      _errorMessage = null;
-      notifyListeners();
+      _setLoading(true);
       
-      await _firestoreService.updateWorker(worker);
+      final success = await _workerService.updateWorker(workerId, data, photoFile: photoFile);
       
-      _isLoading = false;
-      notifyListeners();
-      return true;
+      _setLoading(false);
+      return success;
     } catch (e) {
-      _isLoading = false;
-      _errorMessage = e.toString();
-      notifyListeners();
+      _setError('\u0130şçi güncellenirken hata oluştu: $e');
       return false;
     }
   }
   
-  // Delete a worker
+  // İşçi sil
   Future<bool> deleteWorker(String workerId) async {
     try {
-      _isLoading = true;
-      _errorMessage = null;
-      notifyListeners();
+      _setLoading(true);
       
-      await _firestoreService.deleteWorker(workerId);
+      final success = await _workerService.deleteWorker(workerId);
       
-      _isLoading = false;
-      notifyListeners();
-      return true;
+      _setLoading(false);
+      return success;
     } catch (e) {
-      _isLoading = false;
-      _errorMessage = e.toString();
-      notifyListeners();
+      _setError('\u0130şçi silinirken hata oluştu: $e');
       return false;
     }
   }
   
-  // Set worker active status
+  // İşçi aktiflik durumunu güncelle
   Future<bool> setWorkerActiveStatus(String workerId, bool isActive) async {
     try {
-      _isLoading = true;
-      _errorMessage = null;
-      notifyListeners();
+      _setLoading(true);
       
-      await _firestoreService.setWorkerActiveStatus(workerId, isActive);
+      final success = await _workerService.setWorkerActiveStatus(workerId, isActive);
       
-      _isLoading = false;
-      notifyListeners();
-      return true;
+      _setLoading(false);
+      return success;
     } catch (e) {
-      _isLoading = false;
-      _errorMessage = e.toString();
-      notifyListeners();
+      _setError('\u0130şçi durumu güncellenirken hata oluştu: $e');
       return false;
     }
   }
   
-  // Clear error message
-  void clearError() {
-    _errorMessage = null;
+  // Yükleme durumunu ayarla
+  void _setLoading(bool loading) {
+    _isLoading = loading;
     notifyListeners();
   }
   
-  // Alt kullanıcı için işçileri filtrele (sadece yetkili olduğu projelerdeki işçiler)
-  void filterWorkersForUser(List<String> userProjectIds) {
-    if (userProjectIds.isEmpty) {
-      _filteredWorkers = [];
-      _filteredActiveWorkers = [];
-    } else {
-      // Projelere atanmış tüm işçi ID'lerini topla
-      Set<String> allowedWorkerIds = {};
-      
-      // Bu kısım için FirestoreService'den proje atamalarını almamız gerekiyor
-      // Şimdilik basit bir filtreleme yapalım
-      
-      _filteredWorkers = _workers;
-      _filteredActiveWorkers = _activeWorkers;
-    }
+  // Hata mesajını ayarla
+  void _setError(String error) {
+    _errorMessage = error;
+    _isLoading = false;
+    notifyListeners();
+  }
+  
+  // Hata mesajını temizle
+  void clearError() {
+    _errorMessage = null;
     notifyListeners();
   }
   

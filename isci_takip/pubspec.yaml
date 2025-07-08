@@ -48,6 +48,9 @@ dependencies:
   
   # Image handling
   image_picker: ^1.0.7
+
+  # Local storage
+  shared_preferences: ^2.2.2
   
   # Date formatting
   intl: ^0.20.2

@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/worker_model.dart';
@@ -51,15 +52,7 @@ class WorkerDetailsView extends StatelessWidget {
             Center(
               child: Column(
                 children: [
-                  CircleAvatar(
-                    radius: 50,
-                    backgroundColor: Colors.blue,
-                    backgroundImage: worker.photoUrl.isNotEmpty ? NetworkImage(worker.photoUrl) : null,
-                    child: worker.photoUrl.isEmpty ? Text(
-                      worker.firstName.isNotEmpty ? worker.firstName[0].toUpperCase() : '?',
-                      style: const TextStyle(fontSize: 40, color: Colors.white),
-                    ) : null,
-                  ),
+                  _buildWorkerAvatar(worker),
                   const SizedBox(height: 16),
                   Text(
                     '${worker.firstName} ${worker.lastName}',
@@ -251,39 +244,136 @@ class WorkerDetailsView extends StatelessWidget {
     );
   }
 
+  // İşçi fotoğrafını güvenli bir şekilde gösteren widget
+  Widget _buildWorkerAvatar(WorkerModel worker) {
+    if (worker.photoUrl.isEmpty) {
+      // Fotoğraf yoksa baş harfini göster
+      return CircleAvatar(
+        radius: 50,
+        backgroundColor: Colors.blue,
+        child: Text(
+          worker.firstName.isNotEmpty ? worker.firstName[0].toUpperCase() : '?',
+          style: const TextStyle(fontSize: 40, color: Colors.white),
+        ),
+      );
+    }
+    
+    // Ağ üzerinden fotoğraf yükleme
+    if (worker.photoUrl.startsWith('http')) {
+      return CircleAvatar(
+        radius: 50,
+        backgroundColor: Colors.blue,
+        backgroundImage: null, // Doğrudan backgroundImage kullanmak yerine child içinde Image widget kullanacağız
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(50),
+          child: Image.network(
+            worker.photoUrl,
+            width: 100,
+            height: 100,
+            fit: BoxFit.cover,
+            loadingBuilder: (context, child, loadingProgress) {
+              if (loadingProgress == null) return child;
+              return Center(
+                child: CircularProgressIndicator(
+                  value: loadingProgress.expectedTotalBytes != null
+                      ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                      : null,
+                ),
+              );
+            },
+            errorBuilder: (context, error, stackTrace) {
+              print('Ağ fotoğrafı yükleme hatası: $error');
+              return Text(
+                worker.firstName.isNotEmpty ? worker.firstName[0].toUpperCase() : '?',
+                style: const TextStyle(fontSize: 40, color: Colors.white),
+              );
+            },
+          ),
+        ),
+      );
+    } 
+    // Yerel dosya sisteminden fotoğraf yükleme
+    else {
+      try {
+        // Dosya var mı kontrol et
+        final file = File(worker.photoUrl);
+        if (!file.existsSync()) {
+          print('Dosya bulunamadı: ${worker.photoUrl}');
+          return CircleAvatar(
+            radius: 50,
+            backgroundColor: Colors.blue,
+            child: Text(
+              worker.firstName.isNotEmpty ? worker.firstName[0].toUpperCase() : '?',
+              style: const TextStyle(fontSize: 40, color: Colors.white),
+            ),
+          );
+        }
+        
+        return CircleAvatar(
+          radius: 50,
+          backgroundColor: Colors.blue,
+          backgroundImage: null, // Doğrudan backgroundImage kullanmak yerine child içinde Image widget kullanacağız
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(50),
+            child: Image.file(
+              file,
+              width: 100,
+              height: 100,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) {
+                print('Dosya fotoğrafı yükleme hatası: $error');
+                return Text(
+                  worker.firstName.isNotEmpty ? worker.firstName[0].toUpperCase() : '?',
+                  style: const TextStyle(fontSize: 40, color: Colors.white),
+                );
+              },
+            ),
+          ),
+        );
+      } catch (e) {
+        print('Fotoğraf yükleme hatası: $e');
+        return CircleAvatar(
+          radius: 50,
+          backgroundColor: Colors.blue,
+          child: Text(
+            worker.firstName.isNotEmpty ? worker.firstName[0].toUpperCase() : '?',
+            style: const TextStyle(fontSize: 40, color: Colors.white),
+          ),
+        );
+      }
+    }
+  }
+
   void _showDeleteConfirmationDialog(BuildContext context, WorkerModel worker) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('İşçi Sil'),
-        content: Text(
-          '${worker.firstName} ${worker.lastName} isimli işçiyi silmek istediğinize emin misiniz?',
-        ),
+        title: const Text('İşçiyi Sil'),
+        content: Text('${worker.firstName} ${worker.lastName} isimli işçiyi silmek istediğinize emin misiniz?'),
         actions: [
           TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-            },
+            onPressed: () => Navigator.of(context).pop(),
             child: const Text('İptal'),
           ),
-          ElevatedButton(
+          TextButton(
             onPressed: () {
               final viewModel = Provider.of<WorkerViewModel>(context, listen: false);
               viewModel.deleteWorker(worker.id).then((success) {
+                Navigator.of(context).pop(); // Dialog'u kapat
+                Navigator.of(context).pop(); // Detay sayfasından çık
+                
                 if (success) {
-                  Navigator.of(context).pop(); // Close dialog
-                  Navigator.of(context).pop(); // Go back to workers list
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('İşçi başarıyla silindi')),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('İşçi silinirken bir hata oluştu')),
                   );
                 }
               });
             },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Sil'),
+            child: const Text('Sil', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),
@@ -504,23 +594,27 @@ class _WorkerFormDialogState extends State<WorkerFormDialog> {
   void _saveWorker(BuildContext context) {
     final viewModel = Provider.of<WorkerViewModel>(context, listen: false);
     
-    final updatedWorker = WorkerModel(
-      id: widget.worker.id,
-      firstName: _firstNameController.text,
-      lastName: _lastNameController.text,
-      phone: _phoneController.text,
-      address: _addressController.text,
-      photoUrl: _photoUrlController.text,
-      position: _positionController.text, // YENİ
-      safetyDocsComplete: _safetyDocsComplete,
-      entryDocsComplete: _entryDocsComplete,
-    );
+    // Güncellenecek verileri bir Map olarak hazırla
+    final Map<String, dynamic> updateData = {
+      'firstName': _firstNameController.text,
+      'lastName': _lastNameController.text,
+      'phone': _phoneController.text,
+      'address': _addressController.text,
+      'photoUrl': _photoUrlController.text,
+      'position': _positionController.text,
+      'safetyDocsComplete': _safetyDocsComplete,
+      'entryDocsComplete': _entryDocsComplete,
+    };
     
-    viewModel.updateWorker(updatedWorker).then((success) {
+    viewModel.updateWorker(widget.worker.id, updateData).then((success) {
       if (success) {
         Navigator.of(context).pop();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('İşçi bilgileri güncellendi')),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Hata: ${viewModel.errorMessage ?? "Güncelleme başarısız"}')),
         );
       }
     });

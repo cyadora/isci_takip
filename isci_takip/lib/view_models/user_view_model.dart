@@ -12,6 +12,7 @@ class UserViewModel extends ChangeNotifier {
   UserModel? _currentUser;
   List<UserModel> _users = [];
   List<UserModel> _subUsers = []; // Alt kullanıcılar
+  List<UserModel> _pendingUsers = []; // Onay bekleyen kullanıcılar
   
   // Getters
   bool get isLoading => _isLoading;
@@ -19,6 +20,7 @@ class UserViewModel extends ChangeNotifier {
   UserModel? get currentUser => _currentUser;
   List<UserModel> get users => _users;
   List<UserModel> get subUsers => _subUsers;
+  List<UserModel> get pendingUsers => _pendingUsers;
   
   // Check if current user is admin
   bool get isAdmin => _currentUser?.role == 'admin';
@@ -38,6 +40,7 @@ class UserViewModel extends ChangeNotifier {
       // If user is admin, fetch all users
       if (isAdmin) {
         await fetchAllUsers();
+        await fetchPendingUsers();
       }
       
       // If user is admin or subadmin, fetch sub-users
@@ -150,6 +153,7 @@ class UserViewModel extends ChangeNotifier {
           createdBy: _currentUser?.id,
           createdAt: DateTime.now(),
           isActive: true,
+          isApproved: true, // Admin tarafından oluşturulan kullanıcılar otomatik onaylı
         );
         
         await _firestoreService.createUser(newUser);
@@ -287,6 +291,82 @@ class UserViewModel extends ChangeNotifier {
       _isLoading = false;
       notifyListeners();
       return false;
+    }
+  }
+  
+  // Kullanıcı silme (sadece admin)
+  Future<bool> deleteUser(String userId) async {
+    if (!isAdmin) return false;
+    
+    try {
+      _isLoading = true;
+      notifyListeners();
+      
+      // Kullanıcıyı Firestore'dan sil
+      await _firestoreService.deleteUser(userId);
+      
+      // Kullanıcıyı Authentication'dan sil
+      final result = await _authService.deleteUser(userId);
+      
+      // Kullanıcı listelerini yenile
+      if (result) {
+        await fetchAllUsers();
+        await fetchPendingUsers();
+      }
+      
+      _isLoading = false;
+      notifyListeners();
+      return result;
+    } catch (e) {
+      _errorMessage = e.toString();
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+  
+  // Kullanıcı onaylama (sadece admin)
+  Future<bool> approveUser(String userId) async {
+    if (!isAdmin) return false;
+    
+    try {
+      _isLoading = true;
+      notifyListeners();
+      
+      // Kullanıcıyı onayla
+      await _firestoreService.setUserApprovalStatus(userId, true);
+      
+      // Kullanıcı listelerini yenile
+      await fetchAllUsers();
+      await fetchPendingUsers();
+      
+      _isLoading = false;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+  
+  // Onay bekleyen kullanıcıları getir (sadece admin)
+  Future<void> fetchPendingUsers() async {
+    if (!isAdmin) return;
+    
+    try {
+      _isLoading = true;
+      notifyListeners();
+      
+      _pendingUsers = await _firestoreService.getPendingUsers();
+      
+      _isLoading = false;
+      notifyListeners();
+    } catch (e) {
+      _errorMessage = e.toString();
+      _isLoading = false;
+      notifyListeners();
     }
   }
 }

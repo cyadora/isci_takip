@@ -425,4 +425,31 @@ class FirestoreService {
   Future<void> setUserRole(String uid, String role) {
     return usersCollection.doc(uid).update({'role': role});
   }
+  
+  // Kullanıcı silme
+  Future<void> deleteUser(String uid) {
+    return usersCollection.doc(uid).delete();
+  }
+  
+  // Kullanıcı alanını güncelle
+  Future<void> updateUserField(String uid, String field, dynamic value) {
+    return usersCollection.doc(uid).update({field: value});
+  }
+  
+  // Kullanıcı onay durumunu güncelleme
+  Future<void> setUserApprovalStatus(String uid, bool isApproved) {
+    return usersCollection.doc(uid).update({'isApproved': isApproved});
+  }
+  
+  // Onay bekleyen kullanıcıları getir
+  Future<List<UserModel>> getPendingUsers() async {
+    final snapshot = await usersCollection
+        .where('isApproved', isEqualTo: false)
+        .orderBy('createdAt', descending: true)
+        .get();
+    
+    return snapshot.docs
+        .map((doc) => UserModel.fromMap(doc.data() as Map<String, dynamic>))
+        .toList();
+  }
 }

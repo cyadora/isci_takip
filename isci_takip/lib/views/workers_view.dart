@@ -147,14 +147,7 @@ class WorkerListItem extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         child: ListTile(
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          leading: CircleAvatar(
-            backgroundColor: worker.safetyDocsComplete ? Colors.green : Colors.grey,
-            radius: 24, // Biraz daha büyük avatar
-            child: Text(
-              worker.firstName.isNotEmpty ? worker.firstName[0].toUpperCase() : '?',
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
-            ),
-          ),
+          leading: _buildWorkerAvatar(worker),
           title: Text(
             '${worker.firstName} ${worker.lastName}',
             style: TextStyle(
@@ -217,6 +210,107 @@ class WorkerListItem extends StatelessWidget {
   void _toggleWorkerStatus(BuildContext context, WorkerModel worker) {
     final viewModel = Provider.of<WorkerViewModel>(context, listen: false);
     viewModel.setWorkerActiveStatus(worker.id, !worker.safetyDocsComplete);
+  }
+  
+  // İşçi avatarını güvenli bir şekilde oluştur
+  Widget _buildWorkerAvatar(WorkerModel worker) {
+    return CircleAvatar(
+      backgroundColor: worker.safetyDocsComplete ? Colors.green : Colors.grey,
+      radius: 24,
+      child: _buildAvatarContent(worker),
+    );
+  }
+  
+  // Avatar içeriğini oluştur (fotoğraf veya harf)
+  Widget _buildAvatarContent(WorkerModel worker) {
+    // Fotoğraf URL'si boşsa harf göster
+    if (worker.photoUrl.isEmpty) {
+      return Text(
+        worker.firstName.isNotEmpty ? worker.firstName[0].toUpperCase() : '?',
+        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+      );
+    }
+    
+    // Network fotoğrafı için
+    if (worker.photoUrl.startsWith('http')) {
+      return ClipOval(
+        child: Image.network(
+          worker.photoUrl,
+          width: 48,
+          height: 48,
+          fit: BoxFit.cover,
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) return child;
+            return const Center(child: CircularProgressIndicator(color: Colors.white));
+          },
+          errorBuilder: (context, error, stackTrace) {
+            print('Network image error: $error');
+            return Text(
+              worker.firstName.isNotEmpty ? worker.firstName[0].toUpperCase() : '?',
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+            );
+          },
+        ),
+      );
+    }
+    
+    // Yerel dosya fotoğrafı için
+    try {
+      // Web platformunda File sınıfı farklı çalıştığı için kısa devre yapıyoruz
+      bool isWeb = identical(0, 0.0);
+      
+      if (isWeb) {
+        // Web platformunda yerel dosya erişimi farklı çalışır
+        // Bu durumda network image olarak deniyoruz
+        return ClipOval(
+          child: Image.network(
+            worker.photoUrl,
+            width: 48,
+            height: 48,
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) {
+              print('Fotoğraf yükleme hatası: $error');
+              return Text(
+                worker.firstName.isNotEmpty ? worker.firstName[0].toUpperCase() : '?',
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+              );
+            },
+          ),
+        );
+      } else {
+        // Mobil platformlarda File API'sini kullanabiliriz
+        final file = File(worker.photoUrl);
+        if (!file.existsSync()) {
+          print('File not found: ${worker.photoUrl}');
+          return Text(
+            worker.firstName.isNotEmpty ? worker.firstName[0].toUpperCase() : '?',
+            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+          );
+        }
+        
+        return ClipOval(
+          child: Image.file(
+            file,
+            width: 48,
+            height: 48,
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) {
+              print('File image error: $error');
+              return Text(
+                worker.firstName.isNotEmpty ? worker.firstName[0].toUpperCase() : '?',
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+              );
+            },
+          ),
+        );
+      }
+    } catch (e) {
+      print('Image loading error: $e');
+      return Text(
+        worker.firstName.isNotEmpty ? worker.firstName[0].toUpperCase() : '?',
+        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+      );
+    }
   }
 }
 
@@ -292,8 +386,18 @@ class _AddEditWorkerDialogState extends State<AddEditWorkerDialog> {
           width: 100,
           height: 100,
           fit: BoxFit.cover,
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) return child;
+            return Center(
+              child: CircularProgressIndicator(
+                value: loadingProgress.expectedTotalBytes != null
+                    ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                    : null,
+              ),
+            );
+          },
           errorBuilder: (context, error, stackTrace) {
-            print('Fotoğraf yükleme hatası: $error');
+            print('Ağ fotoğrafı yükleme hatası: $error');
             return const Icon(Icons.person, size: 50);
           },
         ),
@@ -302,14 +406,21 @@ class _AddEditWorkerDialogState extends State<AddEditWorkerDialog> {
     // Mobil platformlar için dosya yolu
     else {
       try {
+        // Dosya var mı kontrol et
+        final file = File(photoUrl);
+        if (!file.existsSync()) {
+          print('Dosya bulunamadı: $photoUrl');
+          return const Icon(Icons.person, size: 50);
+        }
+        
         return ClipOval(
           child: Image.file(
-            File(photoUrl),
+            file,
             width: 100,
             height: 100,
             fit: BoxFit.cover,
             errorBuilder: (context, error, stackTrace) {
-              print('Fotoğraf yükleme hatası: $error');
+              print('Dosya fotoğrafı yükleme hatası: $error');
               return const Icon(Icons.person, size: 50);
             },
           ),
@@ -484,31 +595,51 @@ class _AddEditWorkerDialogState extends State<AddEditWorkerDialog> {
       
       if (source == null) return;
       
-      final XFile? image = await _picker.pickImage(
-        source: source,
-        maxWidth: 800,
-        maxHeight: 800,
-        imageQuality: 80,
-      );
-      
-      if (image != null) {
-        setState(() {
-          _isLoading = true;
-        });
+      // iOS ve diğer platformlarda daha güvenli fotoğraf seçimi
+      try {
+        final XFile? image = await _picker.pickImage(
+          source: source,
+          maxWidth: 800,
+          maxHeight: 800,
+          imageQuality: 80,
+        );
         
-        // Basitçe fotoğraf path'ini kaydet (iOS'ta da çalışacak)
-        setState(() {
-          _selectedPhotoUrl = image.path;
-          _isLoading = false;
-        });
-        
+        if (image != null) {
+          setState(() {
+            _isLoading = true;
+          });
+          
+          // Dosya yolunu kaydet
+          final String filePath = image.path;
+          
+          // Dosyanın var olduğunu kontrol et
+          final fileExists = await File(filePath).exists();
+          if (!fileExists) {
+            throw Exception('Seçilen dosya bulunamadı: $filePath');
+          }
+          
+          setState(() {
+            _selectedPhotoUrl = filePath;
+            _isLoading = false;
+          });
+          
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Fotoğraf seçildi')),
+            );
+          }
+        }
+      } catch (imageError) {
+        print('Fotoğraf seçme hatası: $imageError');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Fotoğraf seçildi')),
+            SnackBar(content: Text('Fotoğraf seçilirken hata oluştu: $imageError')),
           );
         }
+        setState(() => _isLoading = false);
       }
     } catch (e) {
+      print('Fotoğraf seçme dialog hatası: $e');
       setState(() {
         _isLoading = false;
       });
@@ -530,71 +661,63 @@ class _AddEditWorkerDialogState extends State<AddEditWorkerDialog> {
       
       setState(() => _isLoading = true);
       
-      String photoUrl = '';
-      
-      // Fotoğraf seçildiyse önce Firebase Storage'a yükle
-      if (_selectedPhotoUrl.isNotEmpty && !_selectedPhotoUrl.startsWith('http')) {
-        try {
-          // Dosya adını oluştur
-          final fileName = '${DateTime.now().millisecondsSinceEpoch}_${_nameController.text}_${_surnameController.text}.jpg';
-          
-          // Firebase Storage'a yükle
-          final storageRef = FirebaseStorage.instance
-              .ref()
-              .child('worker_photos')
-              .child(fileName);
-          
-          // Dosyayı yükle
-          final uploadTask = await storageRef.putFile(File(_selectedPhotoUrl));
-          
-          // Yükleme tamamlandığında URL'yi al
-          photoUrl = await uploadTask.ref.getDownloadURL();
-          
-          print('Fotoğraf başarıyla yüklendi: $photoUrl');
-        } catch (e) {
-          print('Fotoğraf yükleme hatası: $e');
-          // Hata durumunda kullanıcıya bildir ama işleme devam et
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Fotoğraf yüklenemedi: $e')),
-          );
-        }
-      } else if (_selectedPhotoUrl.startsWith('http')) {
-        // Eğer zaten bir URL ise (düzenleme modu)
-        photoUrl = _selectedPhotoUrl;
-      }
-      
-      // Fotoğraf URL'sini belirle
-      String finalPhotoUrl = '';
-      
-      // Eğer yeni bir fotoğraf yüklendiyse, onun URL'sini kullan
-      if (photoUrl.isNotEmpty) {
-        finalPhotoUrl = photoUrl;
-      }
-      // Eğer düzenleme modundaysa ve fotoğraf değişmediyse, mevcut URL'yi kullan
-      else if (_selectedPhotoUrl.isNotEmpty && _selectedPhotoUrl.startsWith('http')) {
-        finalPhotoUrl = _selectedPhotoUrl;
-      }
-      // Yerel dosya seçildiyse ve yüklenemezse, boş bırak
-      
+      // İşçi modelini oluştur
       final worker = WorkerModel(
           id: widget.worker?.id ?? '',
           firstName: _nameController.text,
           lastName: _surnameController.text,
           phone: _phoneController.text,
           address: _addressController.text,
-          photoUrl: finalPhotoUrl,
+          photoUrl: widget.worker?.photoUrl ?? '', // Mevcut fotoğraf URL'si (varsa)
           position: _positionController.text, 
           safetyDocsComplete: _isActive,
           entryDocsComplete: widget.worker?.entryDocsComplete ?? false,
           isActive: true,
-        );
+      );
+      
+      // Fotoğraf dosyası kontrolü ve hazırlığı
+      File? photoFile;
+      if (_selectedPhotoUrl.isNotEmpty && !_selectedPhotoUrl.startsWith('http')) {
+        try {
+          photoFile = File(_selectedPhotoUrl);
+          
+          // Dosyanın var olduğunu kontrol et
+          if (!await photoFile.exists()) {
+            print('Fotoğraf dosyası bulunamadı: $_selectedPhotoUrl');
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Seçilen fotoğraf dosyası bulunamadı')),
+            );
+            setState(() => _isLoading = false);
+            return;
+          }
+        } catch (fileError) {
+          print('Fotoğraf dosyası hatası: $fileError');
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Fotoğraf dosyası hatası: $fileError')),
+          );
+          setState(() => _isLoading = false);
+          return;
+        }
+      }
       
       bool success;
       if (widget.worker != null) {
-        success = await viewModel.updateWorker(worker);
+        // Düzenleme modu - sadece değişen alanları gönder
+        final Map<String, dynamic> updateData = {
+          'firstName': _nameController.text,
+          'lastName': _surnameController.text,
+          'phone': _phoneController.text,
+          'address': _addressController.text,
+          'position': _positionController.text,
+          'safetyDocsComplete': _isActive,
+          'isActive': true,
+        };
+        
+        // İşçiyi güncelle (fotoğraf varsa yükle)
+        success = await viewModel.updateWorker(widget.worker!.id, updateData, photoFile: photoFile);
       } else {
-        final result = await viewModel.addWorker(worker);
-        success = result != false;
+        // Yeni işçi ekle (fotoğraf varsa yükle)
+        success = await viewModel.addWorker(worker, photoFile: photoFile);
       }
       
       if (!mounted) return;
@@ -607,6 +730,13 @@ class _AddEditWorkerDialogState extends State<AddEditWorkerDialog> {
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Hata: ${viewModel.errorMessage ?? "Bilinmeyen hata"}')),
+        );
+      }
+    } catch (e) {
+      print('_saveWorker genel hatası: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('İşçi kaydedilirken beklenmeyen hata oluştu: $e')),
         );
       }
     } finally {
@@ -747,7 +877,22 @@ class WorkerDetailsDialog extends StatelessWidget {
                 width: 150,
                 height: 150,
                 fit: BoxFit.cover,
+                loadingBuilder: (context, child, loadingProgress) {
+                  if (loadingProgress == null) return child;
+                  return SizedBox(
+                    width: 150,
+                    height: 150,
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        value: loadingProgress.expectedTotalBytes != null
+                            ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                            : null,
+                      ),
+                    ),
+                  );
+                },
                 errorBuilder: (context, error, stackTrace) {
+                  print('Ağ fotoğrafı yükleme hatası: $error');
                   return _buildPlaceholderImage();
                 },
               )
@@ -759,16 +904,25 @@ class WorkerDetailsDialog extends StatelessWidget {
   // Dosya yolundan resim yükleme
   Widget _buildFileImage(String photoUrl) {
     try {
+      // Dosya var mı kontrol et
+      final file = File(photoUrl);
+      if (!file.existsSync()) {
+        print('Dosya bulunamadı: $photoUrl');
+        return _buildPlaceholderImage();
+      }
+      
       return Image.file(
-        File(photoUrl),
+        file,
         width: 150,
         height: 150,
         fit: BoxFit.cover,
         errorBuilder: (context, error, stackTrace) {
+          print('Dosya fotoğrafı yükleme hatası: $error');
           return _buildPlaceholderImage();
         },
       );
     } catch (e) {
+      print('Fotoğraf yükleme hatası: $e');
       return _buildPlaceholderImage();
     }
   }

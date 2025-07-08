@@ -394,8 +394,26 @@ class _AddWorkerDialogState extends State<AddWorkerDialog> {
     
     if (!mounted) return;
     
-    if (result is String) { // If success, result is the worker ID
-      String workerId = result;
+    if (result) { // If success, we need to find the worker ID
+      // Worker ID'sini bulmak için aynı isim ve soyisimle eklenen en son işçiyi bul
+      final addedWorker = viewModel.workers.lastWhere(
+        (w) => w.firstName == newWorker.firstName && w.lastName == newWorker.lastName,
+        orElse: () => WorkerModel(id: '', firstName: '', lastName: '', phone: '', address: ''),
+      );
+      
+      if (addedWorker.id.isEmpty) {
+        // İşçi bulunamadı, hata göster
+        setState(() {
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('İşçi eklendi fakat ID bulunamadı')),
+        );
+        Navigator.of(context).pop();
+        return;
+      }
+      
+      String workerId = addedWorker.id;
       String photoUrl = '';
       
       // If there's a selected image, upload it
@@ -404,12 +422,11 @@ class _AddWorkerDialogState extends State<AddWorkerDialog> {
         
         // Update the worker with the photo URL
         if (photoUrl.isNotEmpty) {
-          final updatedWorker = newWorker.copyWith(
-            id: workerId,
-            photoUrl: photoUrl,
-            position: _positionController.text, // YENİ
-          );
-          await viewModel.updateWorker(updatedWorker);
+          // İşçiyi fotoğraf URL'si ile güncelle
+          final updateData = {
+            'photoUrl': photoUrl,
+          };
+          await viewModel.updateWorker(workerId, updateData);
         }
       }
       

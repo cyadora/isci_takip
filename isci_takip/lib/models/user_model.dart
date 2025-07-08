@@ -10,6 +10,7 @@ class UserModel {
   final String? createdBy; // Kullanıcıyı oluşturan admin ID'si
   final DateTime? createdAt; // Kullanıcının oluşturulma tarihi
   final bool isActive; // Kullanıcı aktif mi?
+  final bool isApproved; // Kullanıcı yönetici tarafından onaylandı mı?
 
   // id getter - UserViewModel'de _currentUser!.id kullanımı için
   String get id => uid;
@@ -19,6 +20,9 @@ class UserModel {
   
   // Alt admin mi?
   bool get isSubAdmin => role == 'subadmin';
+  
+  // Giriş yapabilir mi? (Admin ise her zaman true, normal kullanıcı ise onaylanmış olmalı)
+  bool get canLogin => isAdmin || isApproved;
 
   UserModel({
     required this.uid,
@@ -30,6 +34,7 @@ class UserModel {
     this.createdBy,
     this.createdAt,
     this.isActive = true,
+    this.isApproved = false, // Varsayılan olarak onaylanmamış
   });
 
   factory UserModel.fromMap(Map<String, dynamic> data) {
@@ -47,6 +52,7 @@ class UserModel {
           ? (data['createdAt'] as Timestamp).toDate() 
           : null,
       isActive: data['isActive'] ?? true,
+      isApproved: data['isApproved'] ?? false,
     );
   }
 
@@ -61,6 +67,7 @@ class UserModel {
       'createdBy': createdBy,
       'createdAt': createdAt,
       'isActive': isActive,
+      'isApproved': isApproved,
     };
   }
   
@@ -75,6 +82,7 @@ class UserModel {
     String? createdBy,
     DateTime? createdAt,
     bool? isActive,
+    bool? isApproved,
   }) {
     return UserModel(
       uid: uid ?? this.uid,
@@ -86,6 +94,7 @@ class UserModel {
       createdBy: createdBy ?? this.createdBy,
       createdAt: createdAt ?? this.createdAt,
       isActive: isActive ?? this.isActive,
+      isApproved: isApproved ?? this.isApproved,
     );
   }
 }

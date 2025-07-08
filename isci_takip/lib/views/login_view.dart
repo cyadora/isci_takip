@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../view_models/login_view_model.dart';
 import '../view_models/user_view_model.dart';
+import '../services/shared_preferences_service.dart';
 import 'home_view.dart';
 
 class LoginView extends StatefulWidget {
@@ -16,6 +17,32 @@ class _LoginViewState extends State<LoginView> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isRegisterMode = false;
+  bool _rememberMe = false;
+  bool _obscurePassword = true; // Şifre görünürlüğü kontrolü
+  
+  @override
+  void initState() {
+    super.initState();
+    // Kaydedilmiş oturum bilgilerini yükle
+    _loadSavedCredentials();
+  }
+  
+  // Kaydedilmiş oturum bilgilerini yükle
+  Future<void> _loadSavedCredentials() async {
+    final loginViewModel = Provider.of<LoginViewModel>(context, listen: false);
+    
+    // "Beni hatırla" durumunu yükle
+    _rememberMe = await SharedPreferencesService.getRememberMe();
+    loginViewModel.setRememberMe(_rememberMe);
+    
+    // Kaydedilmiş e-posta adresini yükle
+    if (_rememberMe) {
+      final savedEmail = await loginViewModel.getSavedEmail();
+      if (savedEmail != null && savedEmail.isNotEmpty) {
+        _emailController.text = savedEmail;
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -31,29 +58,40 @@ class _LoginViewState extends State<LoginView> {
       final email = _emailController.text.trim();
       final password = _passwordController.text.trim();
       
+      // "Beni hatırla" durumunu ayarla
+      loginViewModel.setRememberMe(_rememberMe);
+      
       bool success;
       if (_isRegisterMode) {
-        // Register as a regular user (admin will later change role if needed)
+        // Kayıt işlemi
         success = await loginViewModel.register(email, password);
         if (success) {
-          // Initialize user role after registration
+          // Kullanıcı rolünü başlat
           await userViewModel.initializeCurrentUser();
+          
+          // Kayıt başarılı mesajı
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Kayıt başarılı. Yönetici onayı bekleniyor.')),
+            );
+          }
         }
       } else {
+        // Giriş işlemi
         success = await loginViewModel.signIn(email, password);
         if (success) {
-          // Load user role information after login
+          // Kullanıcı rol bilgilerini yükle
           await userViewModel.initializeCurrentUser();
         }
       }
       
       if (success && mounted) {
-        // Navigate to home page
+        // Ana sayfaya yönlendir
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (context) => const HomeView()),
         );
       } else if (mounted) {
-        // Show error message
+        // Hata mesajı göster
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(loginViewModel.errorMessage ?? 'Bir hata oluştu')),
         );
@@ -98,50 +136,88 @@ class _LoginViewState extends State<LoginView> {
               const SizedBox(height: 32),
               
               // Email field
-              TextFormField(
-                controller: _emailController,
-                decoration: const InputDecoration(
-                  labelText: 'E-posta',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.email),
+              AutofillGroup(
+                child: Column(
+                  children: [
+                    TextFormField(
+                  controller: _emailController,
+                  decoration: const InputDecoration(
+                    labelText: 'E-posta',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.email),
+                    hintText: 'ornek@email.com',
+                  ),
+                  keyboardType: TextInputType.emailAddress,
+                  textInputAction: TextInputAction.next,
+                  autocorrect: false,
+                  enableSuggestions: true,
+                  autofillHints: const [AutofillHints.email, AutofillHints.username],
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Lütfen e-posta adresinizi girin';
+                    }
+                    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
+                      return 'Geçerli bir e-posta adresi girin';
+                    }
+                    return null;
+                  },
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    // Password field
+                    TextFormField(
+                      controller: _passwordController,
+                      decoration: InputDecoration(
+                        labelText: 'Şifre',
+                        border: const OutlineInputBorder(),
+                        prefixIcon: const Icon(Icons.lock),
+                        // Kullanıcıya şifre görünürlüğü kontrolü ekle
+                        suffixIcon: IconButton(
+                          icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility),
+                          onPressed: () {
+                            setState(() {
+                              _obscurePassword = !_obscurePassword;
+                            });
+                          },
+                          tooltip: _obscurePassword ? 'Şifreyi göster' : 'Şifreyi gizle',
+                        ),
+                      ),
+                      obscureText: _obscurePassword,
+                      autocorrect: false,
+                      enableSuggestions: false,
+                      keyboardType: TextInputType.visiblePassword,
+                      textInputAction: TextInputAction.done,
+                      autofillHints: const [AutofillHints.password],
+                      onFieldSubmitted: (_) => _submitForm(),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Lütfen şifrenizi girin';
+                        }
+                        if (_isRegisterMode && value.length < 6) {
+                          return 'Şifre en az 6 karakter olmalıdır';
+                        }
+                        return null;
+                      },
+                    ),
+                  ],
                 ),
-                keyboardType: TextInputType.emailAddress,
-                autocorrect: false,
-                autofillHints: const [AutofillHints.email, AutofillHints.username],
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Lütfen e-posta adresinizi girin';
-                  }
-                  if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
-                    return 'Geçerli bir e-posta adresi girin';
-                  }
-                  return null;
-                },
               ),
-              const SizedBox(height: 16),
+              // "Beni hatırla" seçeneği
+              if (!_isRegisterMode) // Sadece giriş modunda göster
+                Row(
+                  children: [
+                    Checkbox(
+                      value: _rememberMe,
+                      onChanged: (value) {
+                        setState(() {
+                          _rememberMe = value ?? false;
+                        });
+                      },
+                    ),
+                    const Text('Beni hatırla'),
+                  ],
+                ),
               
-              // Password field
-              TextFormField(
-                controller: _passwordController,
-                decoration: const InputDecoration(
-                  labelText: 'Şifre',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.lock),
-                ),
-                obscureText: true,
-                autocorrect: false,
-                enableSuggestions: false,
-                autofillHints: const [AutofillHints.password],
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Lütfen şifrenizi girin';
-                  }
-                  if (_isRegisterMode && value.length < 6) {
-                    return 'Şifre en az 6 karakter olmalıdır';
-                  }
-                  return null;
-                },
-              ),
               const SizedBox(height: 24),
               
               // Login/Register button

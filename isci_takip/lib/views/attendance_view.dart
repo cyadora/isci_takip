@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -109,7 +110,27 @@ class _AttendanceViewState extends State<AttendanceView> {
           if (details is Map<String, dynamic>) {
             isPresent = details.containsKey('present') ? 
                 details['present'] as bool? ?? false : false;
-            _attendanceDetails[workerId] = details;
+            
+            // Puantaj detaylarını kaydet
+            final Map<String, dynamic> attendanceInfo = {};
+            attendanceInfo['present'] = isPresent;
+            
+            // Kayıt yapan kişi bilgisini ekle
+            if (details.containsKey('createdBy')) {
+              attendanceInfo['createdBy'] = details['createdBy'];
+            }
+            
+            // Kayıt yapan kişinin adını ekle
+            if (details.containsKey('createdByName')) {
+              attendanceInfo['createdByName'] = details['createdByName'];
+            }
+            
+            // Kayıt zamanını ekle
+            if (details.containsKey('createdAt')) {
+              attendanceInfo['createdAt'] = details['createdAt'];
+            }
+            
+            _attendanceDetails[workerId] = attendanceInfo;
           }
         } else {
           // Eski format: doğrudan boolean değer
@@ -255,9 +276,15 @@ class _AttendanceViewState extends State<AttendanceView> {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Mevcut İşçi Sayısı: ${_attendanceMap.entries.where((entry) => entry.value).length}/${_attendanceMap.length}',
+                  'Mevcut İşçi Sayısı: ${_attendanceMap.entries.where((entry) => entry.value).length}/${_assignedWorkerIds.length}',
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
+                // Debug bilgisi
+                if (false) // Gerekirse true yaparak debug bilgisini görebilirsiniz
+                  Text(
+                    'Debug - Attendance Map Size: ${_attendanceMap.length}, Assigned Workers: ${_assignedWorkerIds.length}',
+                    style: const TextStyle(color: Colors.red, fontSize: 12),
+                  ),
               ],
             ),
           ),
@@ -385,19 +412,18 @@ class _AttendanceViewState extends State<AttendanceView> {
         }
 
         return SwitchListTile(
-          title: Text('${worker.firstName} ${worker.lastName}'),
+          title: Text(
+            '${worker.firstName} ${worker.lastName}',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: _attendanceMap[workerId] == true ? Colors.green.shade800 : Colors.black87,
+            ),
+          ),
           subtitle: subtitleText != null ? Text(
             subtitleText,
             style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
           ) : null,
-          secondary: CircleAvatar(
-            backgroundColor: Colors.blue,
-            backgroundImage: worker.photoUrl.isNotEmpty ? NetworkImage(worker.photoUrl) : null,
-            child: worker.photoUrl.isEmpty ? Text(
-              worker.firstName.isNotEmpty ? worker.firstName[0].toUpperCase() : '?',
-              style: const TextStyle(color: Colors.white),
-            ) : null,
-          ),
+          secondary: _buildWorkerAvatar(worker),
           value: _attendanceMap[workerId] ?? false,
           onChanged: (bool value) {
             setState(() {
@@ -414,6 +440,121 @@ class _AttendanceViewState extends State<AttendanceView> {
     final months = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
                     'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
     return '${_selectedDate.day} ${months[_selectedDate.month - 1]} ${_selectedDate.year}';
+  }
+  
+  // İşçi avatarını güvenli bir şekilde oluştur
+  Widget _buildWorkerAvatar(WorkerModel worker) {
+    return CircleAvatar(
+      backgroundColor: Colors.blue,
+      radius: 24,
+      child: _buildAvatarContent(worker),
+    );
+  }
+  
+  // Avatar içeriğini oluştur (fotoğraf veya harf)
+  Widget _buildAvatarContent(WorkerModel worker) {
+    // Fotoğraf URL'si boşsa harf göster
+    if (worker.photoUrl.isEmpty) {
+      return Text(
+        worker.firstName.isNotEmpty ? worker.firstName[0].toUpperCase() : '?',
+        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+      );
+    }
+    
+    // Network fotoğrafı için
+    if (worker.photoUrl.startsWith('http')) {
+      return ClipOval(
+        child: Image.network(
+          worker.photoUrl,
+          width: 48,
+          height: 48,
+          fit: BoxFit.cover,
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) return child;
+            return const Center(child: CircularProgressIndicator(color: Colors.white));
+          },
+          errorBuilder: (context, error, stackTrace) {
+            print('Network image error: $error');
+            return Text(
+              worker.firstName.isNotEmpty ? worker.firstName[0].toUpperCase() : '?',
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+            );
+          },
+        ),
+      );
+    }
+    
+    // Yerel dosya fotoğrafı için
+    try {
+      // Web platformunda File sınıfı farklı çalıştığı için kısa devre yapıyoruz
+      // ve doğrudan Image.network kullanıyoruz
+      bool isWeb = identical(0, 0.0);
+      
+      if (isWeb) {
+        // Web platformunda yerel dosya erişimi farklı çalışır
+        // Bu durumda network image olarak deniyoruz
+        return ClipOval(
+          child: Image.network(
+            worker.photoUrl,
+            width: 48,
+            height: 48,
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) {
+              print('Fotoğraf yükleme hatası: $error');
+              return Text(
+                worker.firstName.isNotEmpty ? worker.firstName[0].toUpperCase() : '?',
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              );
+            },
+          ),
+        );
+      } else {
+        // Mobil platformlarda File API'sini kullanabiliriz
+        final file = File(worker.photoUrl);
+        if (!file.existsSync()) {
+          print('File not found: ${worker.photoUrl}');
+          return Text(
+            worker.firstName.isNotEmpty ? worker.firstName[0].toUpperCase() : '?',
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          );
+        }
+        return ClipOval(
+          child: Image.file(
+            file,
+            width: 48,
+            height: 48,
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) {
+              print('Fotoğraf yükleme hatası: $error');
+              return Text(
+                worker.firstName.isNotEmpty ? worker.firstName[0].toUpperCase() : '?',
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              );
+            },
+          ),
+        );
+      }
+    } catch (e) {
+      print('Image loading error: $e');
+      return Center(
+        child: Text(
+          worker.firstName.isNotEmpty ? worker.firstName[0].toUpperCase() : '?',
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+        ),
+      );
+    }
   }
 
   Future<void> _saveAttendance() async {
