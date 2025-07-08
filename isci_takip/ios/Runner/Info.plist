@@ -45,5 +45,13 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Bu uygulama işçi ve şantiye fotoğrafları çekmek için kameraya erişim gerektirir</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Bu uygulama işçi ve şantiye fotoğrafları seçmek için fotoğraf galerisine erişim gerektirir</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Bu uygulama video kayıtları için mikrofona erişim gerektirir</string>
+	<key>MinimumOSVersion</key>
+	<string>14.0</string>
 </dict>
 </plist>

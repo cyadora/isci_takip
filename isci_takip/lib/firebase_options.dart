@@ -68,7 +68,6 @@ class DefaultFirebaseOptions {
     messagingSenderId: '109074765498',
     projectId: 'isci-takip',
     storageBucket: 'isci-takip.appspot.com',
-    iosClientId: 'YOUR_IOS_CLIENT_ID',
     iosBundleId: 'com.example.isciTakip',
   );
 }
