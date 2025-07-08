@@ -12,11 +12,37 @@ import 'view_models/user_view_model.dart';
 import 'firebase_options.dart';
 
 void main() async {
+  // Flutter binding'i başlat
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
-  runApp(const MyApp());
+  
+  // Hata ayıklama için try-catch bloğu
+  try {
+    print('Firebase başlatılıyor...');
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    print('Firebase başarıyla başlatıldı');
+    
+    // Firebase başarıyla başlatıldıysa uygulamayı çalıştır
+    runApp(const MyApp());
+  } catch (e, stackTrace) {
+    // Hata durumunda detaylı bilgi göster
+    print('Firebase başlatma hatası: $e');
+    print('Stack trace: $stackTrace');
+    
+    // Basit bir hata ekranı göster
+    runApp(MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: Text(
+            'Uygulama başlatılamadı: $e',
+            style: TextStyle(color: Colors.red),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      ),
+    ));
+  }
 }
 
 class MyApp extends StatelessWidget {
